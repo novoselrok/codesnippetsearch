@@ -20,8 +20,8 @@ class Vocabulary:
     def get_token_id(self, token: str) -> Optional[int]:
         return self.token_to_id.get(token)
 
-    def add_tokens(self, tokens: TypingCounter[str], count_threshold: int):
-        for token, count in tokens.most_common():
+    def add_tokens(self, tokens: TypingCounter[str], vocabulary_size: int, count_threshold: int):
+        for token, count in tokens.most_common(vocabulary_size):
             if count >= count_threshold:
                 self.add_token(token)
             else:
@@ -32,10 +32,11 @@ class Vocabulary:
         return len(self.id_to_token)
 
     @staticmethod
-    def create_vocabulary(tokens: Iterator[str], ignored_tokens=None, count_threshold: int = 5):
+    def create_vocabulary(tokens: Iterator[str], ignored_tokens=None,
+                          vocabulary_size: int = 10000, count_threshold: int = 10):
         counter = Counter([token
                            for token in tokens
                            if not ignored_tokens or (ignored_tokens and token not in ignored_tokens)])
         vocabulary = Vocabulary()
-        vocabulary.add_tokens(counter, count_threshold=count_threshold)
+        vocabulary.add_tokens(counter, vocabulary_size, count_threshold)
         return vocabulary
