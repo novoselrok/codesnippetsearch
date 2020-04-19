@@ -5,3 +5,4 @@ src/__pycache__
 data/
 saved_models/
 saved_vocabularies/
+saved_seqs/

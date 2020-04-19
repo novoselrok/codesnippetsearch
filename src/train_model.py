@@ -1,27 +1,18 @@
-import gc
-import itertools
 import random
 import time
 
 import numpy as np
+import tensorflow as tf
 from keras import callbacks, layers, Model, optimizers
-from keras.preprocessing.sequence import pad_sequences
 from more_itertools import chunked
 from scipy.spatial.distance import cdist
 
-from utils import get_vocabularies, get_docs, build_and_serialize_vocabularies
 from keras_utils import ZeroMaskedEntries, mask_aware_mean, mask_aware_mean_output_shape
+from shared import CODE_VOCABULARY_SIZE, DOCSTRING_VOCABULARY_SIZE, CODE_MAX_SEQ_LENGTH, DOCSTRING_MAX_SEQ_LENGTH, \
+    EMBEDDING_SIZE
 
 random.seed(123)
 np.random.seed(123)
-
-EMBEDDING_SIZE = 128
-MAX_CODE_SEQ_LENGTH = 200
-MAX_DOCSTRING_SEQ_LENGTH = 20
-VOCABULARY_SIZE = 10000
-
-SAVED_MODELS_PREFIX_PATH = '../saved_models'
-VOCABULARIES_SERIALIZE_PATH = '../saved_vocabularies/vocabularies.pckl'
 
 
 class MrrEarlyStopping(callbacks.EarlyStopping):
@@ -63,12 +54,12 @@ class MrrEarlyStopping(callbacks.EarlyStopping):
         super().on_epoch_end(epoch, {**logs, 'val_mrr': mean_mrr})
 
 
-def get_code_input_and_embedding_layer(code_sequence_size: int, code_vocabulary_size: int, embedding_size: int):
-    code_input = layers.Input(shape=(code_sequence_size,), name='code_input')
+def get_code_input_and_embedding_layer():
+    code_input = layers.Input(shape=(CODE_MAX_SEQ_LENGTH,), name='code_input')
     code_embedding = layers.Embedding(
-        input_length=code_sequence_size,
-        input_dim=code_vocabulary_size,
-        output_dim=embedding_size,
+        input_length=CODE_MAX_SEQ_LENGTH,
+        input_dim=CODE_VOCABULARY_SIZE,
+        output_dim=EMBEDDING_SIZE,
         name='code_embedding',
         mask_zero=True)(code_input)
     code_embedding = ZeroMaskedEntries()(code_embedding)
@@ -78,13 +69,12 @@ def get_code_input_and_embedding_layer(code_sequence_size: int, code_vocabulary_
     return code_input, code_embedding
 
 
-def get_docstring_input_and_embedding_layer(
-        docstring_sequence_size: int, docstring_vocabulary_size: int, embedding_size: int):
-    docstring_input = layers.Input(shape=(docstring_sequence_size,), name='docstring_input')
+def get_docstring_input_and_embedding_layer():
+    docstring_input = layers.Input(shape=(DOCSTRING_MAX_SEQ_LENGTH,), name='docstring_input')
     docstring_embedding = layers.Embedding(
-        input_length=docstring_sequence_size,
-        input_dim=docstring_vocabulary_size,
-        output_dim=embedding_size,
+        input_length=DOCSTRING_MAX_SEQ_LENGTH,
+        input_dim=DOCSTRING_VOCABULARY_SIZE,
+        output_dim=EMBEDDING_SIZE,
         name='docstring_embedding',
         mask_zero=True)(docstring_input)
     docstring_embedding = ZeroMaskedEntries()(docstring_embedding)
@@ -94,26 +84,42 @@ def get_docstring_input_and_embedding_layer(
     return docstring_input, docstring_embedding
 
 
-def get_model(code_sequence_size: int, docstring_sequence_size: int, code_vocabulary_size: int,
-              docstring_vocabulary_size: int, embedding_size: int = 50) -> Model:
-    code_input, code_embedding = get_code_input_and_embedding_layer(
-        code_sequence_size, code_vocabulary_size, embedding_size)
+def cosine_similarity(x):
+    code_embedding, docstring_embedding = x
+    docstring_norms = tf.norm(docstring_embedding, axis=-1, keepdims=True) + 1e-10
+    code_norms = tf.norm(code_embedding, axis=-1, keepdims=True) + 1e-10
+    return tf.matmul(
+        docstring_embedding / docstring_norms, code_embedding / code_norms, transpose_a=False, transpose_b=True)
 
-    docstring_input, docstring_embedding = get_docstring_input_and_embedding_layer(
-        docstring_sequence_size, docstring_vocabulary_size, embedding_size)
 
-    # cosine similarity
-    merge_layer = layers.Dot(axes=1, normalize=True, name='dot_product')([
+def cosine_loss(_, cosine_similarity_matrix):
+    neg_matrix = tf.linalg.diag(tf.fill(dims=[tf.shape(cosine_similarity_matrix)[0]], value=float('-inf')))
+
+    # Distance between docstring and code snippet should be as small as possible
+    diagonal_cosine_distance = 1. - tf.linalg.diag_part(cosine_similarity_matrix)
+    # Max. similarity between docstring and non-corresponding code snippet should be as small as possible
+    max_positive_non_diagonal_similarity_in_row = tf.reduce_max(
+        tf.nn.relu(cosine_similarity_matrix + neg_matrix), axis=-1)
+
+    # Combined distance and similarity should be as small as possible as well
+    per_sample_loss = tf.maximum(0., diagonal_cosine_distance + max_positive_non_diagonal_similarity_in_row)
+    return tf.reduce_mean(per_sample_loss)
+
+
+def get_model() -> Model:
+    code_input, code_embedding = get_code_input_and_embedding_layer()
+    docstring_input, docstring_embedding = get_docstring_input_and_embedding_layer()
+
+    merge_layer = layers.Lambda(cosine_similarity, name='cosine_similarity')([
         code_embedding, docstring_embedding
     ])
 
     model = Model(inputs=[code_input, docstring_input], outputs=merge_layer)
-    model.compile(optimizer=optimizers.Adam(learning_rate=0.01), loss='mse')
+    model.compile(optimizer=optimizers.Adam(learning_rate=0.01), loss=cosine_loss)
     return model
 
 
-def generate_batch(padded_encoded_code_seqs, padded_encoded_docstring_seqs,
-                   batch_size: int, negative_ratio: float):
+def generate_batch(padded_encoded_code_seqs, padded_encoded_docstring_seqs, batch_size: int):
     n_samples = padded_encoded_code_seqs.shape[0]
 
     shuffled_indices = np.arange(0, n_samples)
@@ -124,119 +130,43 @@ def generate_batch(padded_encoded_code_seqs, padded_encoded_docstring_seqs,
     idx = 0
     while True:
         end_idx = min(idx + batch_size, n_samples)
-        n_positive = min(batch_size, end_idx - idx)
-        n_negative = int(n_positive * negative_ratio)
+        n_batch_samples = min(batch_size, end_idx - idx)
 
-        negative_samples_indices = random.sample(range(n_samples), n_negative * 2)
-        code_negative_samples_indices = negative_samples_indices[:n_negative]
-        docstring_negative_samples_indices = negative_samples_indices[n_negative:]
+        batch_code_seqs = padded_encoded_code_seqs[idx:end_idx, :]
+        batch_docstring_seqs = padded_encoded_docstring_seqs[idx:end_idx, :]
 
-        batch_code_seqs = np.concatenate(
-            (padded_encoded_code_seqs[idx:end_idx, :],
-             padded_encoded_code_seqs[code_negative_samples_indices, :]), axis=0)
+        yield {'code_input': batch_code_seqs, 'docstring_input': batch_docstring_seqs}, np.zeros(n_batch_samples)
 
-        batch_docstring_seqs = np.concatenate(
-            (padded_encoded_docstring_seqs[idx:end_idx, :],
-             padded_encoded_docstring_seqs[docstring_negative_samples_indices, :]), axis=0)
-
-        target = np.concatenate((np.ones(n_positive), -1 * np.ones(n_negative)))
-        yield {'code_input': batch_code_seqs, 'docstring_input': batch_docstring_seqs}, target
-
-        idx += n_positive
+        idx += n_batch_samples
         if idx >= n_samples:
             idx = 0
 
 
-def encode_tokens(docs, tokens_key, vocabulary):
-    encoded_seqs = []
-    for doc in docs:
-        encoded_seqs.append(
-            [vocabulary.token_to_id[token] for token in doc[tokens_key]
-             if token in vocabulary.token_to_id]
-        )
-    return encoded_seqs
-
-
-def pad_encoded_seqs(seqs, maxlen):
-    return np.array(pad_sequences(seqs, maxlen=maxlen, padding='post'))
-
-
-def keep_valid_seqs(padded_encoded_code_seqs, padded_encoded_docstring_seqs):
-    # Keep seqs with at least one valid token
-    valid_code_seqs = padded_encoded_code_seqs.astype(bool).sum(axis=1) > 0
-    valid_docstring_seqs = padded_encoded_docstring_seqs.astype(bool).sum(axis=1) > 0
-    valid_seqs_indices = valid_code_seqs & valid_docstring_seqs
-
-    return padded_encoded_code_seqs[valid_seqs_indices, :], padded_encoded_docstring_seqs[valid_seqs_indices, :]
-
-
-def train(train_docs, validation_docs, verbose=True):
-    code_vocabulary, docstring_vocabulary = get_vocabularies(VOCABULARIES_SERIALIZE_PATH)
-
-    padded_encoded_code_seqs = pad_encoded_seqs(
-        encode_tokens(train_docs, 'code_tokens', code_vocabulary), MAX_CODE_SEQ_LENGTH)
-    padded_encoded_docstring_seqs = pad_encoded_seqs(
-        encode_tokens(train_docs, 'docstring_tokens', docstring_vocabulary), MAX_DOCSTRING_SEQ_LENGTH)
-    padded_encoded_code_seqs, padded_encoded_docstring_seqs = keep_valid_seqs(
-        padded_encoded_code_seqs, padded_encoded_docstring_seqs)
-
-    padded_encoded_code_validation_seqs = pad_encoded_seqs(
-        encode_tokens(validation_docs, 'code_tokens', code_vocabulary), MAX_CODE_SEQ_LENGTH)
-    padded_encoded_docstring_validation_seqs = pad_encoded_seqs(
-        encode_tokens(validation_docs, 'docstring_tokens', docstring_vocabulary), MAX_DOCSTRING_SEQ_LENGTH)
-    padded_encoded_code_validation_seqs, padded_encoded_docstring_validation_seqs = keep_valid_seqs(
-        padded_encoded_code_validation_seqs, padded_encoded_docstring_validation_seqs)
-
-    model = get_model(
-        MAX_CODE_SEQ_LENGTH,
-        MAX_DOCSTRING_SEQ_LENGTH,
-        VOCABULARY_SIZE,
-        VOCABULARY_SIZE,
-        embedding_size=EMBEDDING_SIZE
-    )
+def train(language, verbose=True):
+    model = get_model()
     if verbose:
         print(model.summary())
 
-    del train_docs
-    del docstring_vocabulary
-    del code_vocabulary
-    gc.collect()
+    train_code_seqs = np.load(f'../saved_seqs/{language}_train_code_seqs.npy')
+    train_docstring_seqs = np.load(f'../saved_seqs/{language}_train_docstring_seqs.npy')
 
-    batch_size = 256
+    valid_code_seqs = np.load(f'../saved_seqs/{language}_valid_code_seqs.npy')
+    valid_docstring_seqs = np.load(f'../saved_seqs/{language}_valid_docstring_seqs.npy')
+
+    num_samples = train_code_seqs.shape[0]
+    batch_size = 1000
     model.fit_generator(
-        generate_batch(
-            padded_encoded_code_seqs, padded_encoded_docstring_seqs, batch_size=batch_size, negative_ratio=2),
+        generate_batch(train_code_seqs, train_docstring_seqs, batch_size=batch_size),
         epochs=200,
-        steps_per_epoch=padded_encoded_code_seqs.shape[0] // batch_size,
+        steps_per_epoch=num_samples // batch_size,
         verbose=2 if verbose else -1,
         callbacks=[
-            MrrEarlyStopping(padded_encoded_code_validation_seqs, padded_encoded_docstring_validation_seqs, patience=25)
+            MrrEarlyStopping(valid_code_seqs, valid_docstring_seqs, patience=25)
         ]
     )
-    model_serialize_path = f'{SAVED_MODELS_PREFIX_PATH}/embedding_model_{int(time.time())}.hdf5'
+    model_serialize_path = f'../saved_models/embedding_model_{int(time.time())}.hdf5'
     model.save(model_serialize_path)
 
 
-def preprocess_docs(docs):
-    for doc in docs:
-        doc['code_tokens'] = list(itertools.chain.from_iterable(
-            [token.split('_') for token in doc['code_tokens']]))
-        doc['code_tokens'] = [token.lower() for token in doc['code_tokens']]
-        doc['docstring_tokens'] = [token.lower() for token in doc['docstring_tokens']]
-
-    return [doc for doc in docs if len(doc['code_tokens']) > 0 and len(doc['docstring_tokens']) > 0]
-
-
-def main():
-    train_docs = get_docs([f'../data/python_train_{i}.jsonl' for i in range(14)])
-    validation_docs = get_docs(['../data/python_valid_0.jsonl'])
-
-    train_docs = preprocess_docs(train_docs)
-    validation_docs = preprocess_docs(validation_docs)
-
-    build_and_serialize_vocabularies(train_docs, VOCABULARIES_SERIALIZE_PATH)
-    train(train_docs, validation_docs)
-
-
 if __name__ == '__main__':
-    main()
+    train('python')
