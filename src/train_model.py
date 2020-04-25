@@ -3,13 +3,13 @@ import time
 
 import numpy as np
 import tensorflow as tf
-from keras import callbacks, layers, Model, optimizers
-from more_itertools import chunked
-from scipy.spatial.distance import cdist
+from keras import callbacks, layers, Model, optimizers, backend as K
+from wandb.keras import WandbCallback
 
+import evaluate_model
+import shared
+import utils
 from keras_utils import ZeroMaskedEntries, mask_aware_mean, mask_aware_mean_output_shape
-from shared import CODE_VOCABULARY_SIZE, DOCSTRING_VOCABULARY_SIZE, CODE_MAX_SEQ_LENGTH, DOCSTRING_MAX_SEQ_LENGTH, \
-    EMBEDDING_SIZE
 
 random.seed(123)
 np.random.seed(123)
@@ -25,56 +25,41 @@ class MrrEarlyStopping(callbacks.EarlyStopping):
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        code_embedding_predictor = Model(
-           inputs=self.model.get_layer('code_input').input,
-           outputs=self.model.get_layer('code_embedding_mean').output)
 
-        docstring_embedding_predictor = Model(
-           inputs=self.model.get_layer('docstring_input').input,
-           outputs=self.model.get_layer('docstring_embedding_mean').output)
+        mean_mrr = evaluate_model.evaluate_mean_mrr(
+            self.model, self.padded_encoded_code_validation_seqs, self.padded_encoded_docstring_validation_seqs,
+            batch_size=self.batch_size)
 
-        n_samples = self.padded_encoded_code_validation_seqs.shape[0]
-        mrrs = []
-        for idx_chunk in chunked(list(range(n_samples)), self.batch_size):
-            if len(idx_chunk) < self.batch_size:
-                continue
-
-            code_embeddings = code_embedding_predictor.predict(
-                self.padded_encoded_code_validation_seqs[idx_chunk, :])
-            docstring_embeddings = docstring_embedding_predictor.predict(
-                self.padded_encoded_docstring_validation_seqs[idx_chunk, :])
-
-            distance_matrix = cdist(docstring_embeddings, code_embeddings, 'cosine')
-            correct_elements = np.expand_dims(np.diag(distance_matrix), axis=-1)
-            ranks = np.sum(distance_matrix <= correct_elements, axis=-1)
-            mrrs.append(np.mean(1.0 / ranks))
-
-        mean_mrr = np.mean(mrrs)
         print('Mean MRR:', mean_mrr)
         super().on_epoch_end(epoch, {**logs, 'val_mrr': mean_mrr})
 
 
 def get_code_input_and_embedding_layer():
-    code_input = layers.Input(shape=(CODE_MAX_SEQ_LENGTH,), name='code_input')
+    code_input = layers.Input(shape=(shared.CODE_MAX_SEQ_LENGTH,), name='code_input')
     code_embedding = layers.Embedding(
-        input_length=CODE_MAX_SEQ_LENGTH,
-        input_dim=CODE_VOCABULARY_SIZE,
-        output_dim=EMBEDDING_SIZE,
+        input_length=shared.CODE_MAX_SEQ_LENGTH,
+        input_dim=shared.CODE_VOCABULARY_SIZE,
+        output_dim=shared.EMBEDDING_SIZE,
         name='code_embedding',
         mask_zero=True)(code_input)
-    code_embedding = ZeroMaskedEntries()(code_embedding)
-    code_embedding = layers.Lambda(
-        mask_aware_mean, mask_aware_mean_output_shape, name='code_embedding_mean')(code_embedding)
+    attention = layers.Dense(1, activation='tanh', use_bias=False, name='code_attention')(code_embedding)
+    attention = ZeroMaskedEntries()(attention)
+    attention = layers.Flatten()(attention)
+    attention = layers.Activation('softmax')(attention)
+    attention = layers.RepeatVector(shared.EMBEDDING_SIZE)(attention)
+    attention = layers.Permute([2, 1])(attention)
+    code_embedding_mul = layers.Multiply()([code_embedding, attention])
+    code_embedding_mean = layers.Lambda(lambda x: K.sum(x, axis=1), name='code_embedding_mean')(code_embedding_mul)
 
-    return code_input, code_embedding
+    return code_input, code_embedding_mean
 
 
 def get_docstring_input_and_embedding_layer():
-    docstring_input = layers.Input(shape=(DOCSTRING_MAX_SEQ_LENGTH,), name='docstring_input')
+    docstring_input = layers.Input(shape=(shared.DOCSTRING_MAX_SEQ_LENGTH,), name='docstring_input')
     docstring_embedding = layers.Embedding(
-        input_length=DOCSTRING_MAX_SEQ_LENGTH,
-        input_dim=DOCSTRING_VOCABULARY_SIZE,
-        output_dim=EMBEDDING_SIZE,
+        input_length=shared.DOCSTRING_MAX_SEQ_LENGTH,
+        input_dim=shared.DOCSTRING_VOCABULARY_SIZE,
+        output_dim=shared.EMBEDDING_SIZE,
         name='docstring_embedding',
         mask_zero=True)(docstring_input)
     docstring_embedding = ZeroMaskedEntries()(docstring_embedding)
@@ -142,16 +127,16 @@ def generate_batch(padded_encoded_code_seqs, padded_encoded_docstring_seqs, batc
             idx = 0
 
 
-def train(language, verbose=True):
+def train(language, verbose=True, use_wandb=False):
     model = get_model()
     if verbose:
         print(model.summary())
 
-    train_code_seqs = np.load(f'../saved_seqs/{language}_train_code_seqs.npy')
-    train_docstring_seqs = np.load(f'../saved_seqs/{language}_train_docstring_seqs.npy')
+    train_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_train_code_seqs.npy'))
+    train_docstring_seqs = np.load(utils.get_saved_seqs_path(f'{language}_train_docstring_seqs.npy'))
 
-    valid_code_seqs = np.load(f'../saved_seqs/{language}_valid_code_seqs.npy')
-    valid_docstring_seqs = np.load(f'../saved_seqs/{language}_valid_docstring_seqs.npy')
+    valid_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_code_seqs.npy'))
+    valid_docstring_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_docstring_seqs.npy'))
 
     num_samples = train_code_seqs.shape[0]
     batch_size = 1000
@@ -161,12 +146,22 @@ def train(language, verbose=True):
         steps_per_epoch=num_samples // batch_size,
         verbose=2 if verbose else -1,
         callbacks=[
-            MrrEarlyStopping(valid_code_seqs, valid_docstring_seqs, patience=25)
-        ]
+            MrrEarlyStopping(valid_code_seqs, valid_docstring_seqs, patience=10)
+        ] + ([WandbCallback()] if use_wandb else [])
     )
-    model_serialize_path = f'../saved_models/embedding_model_{int(time.time())}.hdf5'
+    model_serialize_path = f'model_{language}_{int(time.time())}.hdf5'
     model.save(model_serialize_path)
 
 
 if __name__ == '__main__':
-    train('python')
+    USE_WANDB = False
+
+    if USE_WANDB:
+        import wandb
+        wandb.init(project='glorified-code-search')
+
+    for language_ in shared.LANGUAGES:
+        print(f'Training {language_}')
+        train(language_, use_wandb=USE_WANDB)
+
+    evaluate_model.emit_ndcg_model_predictions(USE_WANDB)
