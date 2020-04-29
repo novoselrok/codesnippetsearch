@@ -1,9 +1,11 @@
+import sys
 import random
 import time
 
 import numpy as np
 import tensorflow as tf
-from keras import callbacks, layers, Model, optimizers, backend as K
+from keras import callbacks, layers, Model, optimizers
+import wandb
 from wandb.keras import WandbCallback
 
 import evaluate_model
@@ -11,23 +13,23 @@ import shared
 import utils
 from keras_utils import ZeroMaskedEntries, mask_aware_mean, mask_aware_mean_output_shape
 
-random.seed(123)
-np.random.seed(123)
+np.random.seed(0)
+random.seed(0)
 
 
 class MrrEarlyStopping(callbacks.EarlyStopping):
-    def __init__(self, padded_encoded_code_validation_seqs, padded_encoded_docstring_validation_seqs,
+    def __init__(self, padded_encoded_code_validation_seqs, padded_encoded_query_validation_seqs,
                  patience=5, batch_size=1000):
         super().__init__(monitor='val_mrr', mode='max', restore_best_weights=True, verbose=True, patience=patience)
         self.padded_encoded_code_validation_seqs = padded_encoded_code_validation_seqs
-        self.padded_encoded_docstring_validation_seqs = padded_encoded_docstring_validation_seqs
+        self.padded_encoded_query_validation_seqs = padded_encoded_query_validation_seqs
         self.batch_size = batch_size
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
 
-        mean_mrr = evaluate_model.evaluate_mean_mrr(
-            self.model, self.padded_encoded_code_validation_seqs, self.padded_encoded_docstring_validation_seqs,
+        mean_mrr = evaluate_model.evaluate_model_mean_mrr(
+            self.model, self.padded_encoded_code_validation_seqs, self.padded_encoded_query_validation_seqs,
             batch_size=self.batch_size)
 
         print('Mean MRR:', mean_mrr)
@@ -42,47 +44,42 @@ def get_code_input_and_embedding_layer():
         output_dim=shared.EMBEDDING_SIZE,
         name='code_embedding',
         mask_zero=True)(code_input)
-    attention = layers.Dense(1, activation='tanh', use_bias=False, name='code_attention')(code_embedding)
-    attention = ZeroMaskedEntries()(attention)
-    attention = layers.Flatten()(attention)
-    attention = layers.Activation('softmax')(attention)
-    attention = layers.RepeatVector(shared.EMBEDDING_SIZE)(attention)
-    attention = layers.Permute([2, 1])(attention)
-    code_embedding_mul = layers.Multiply()([code_embedding, attention])
-    code_embedding_mean = layers.Lambda(lambda x: K.sum(x, axis=1), name='code_embedding_mean')(code_embedding_mul)
+    code_embedding = ZeroMaskedEntries()(code_embedding)
+    code_embedding = layers.Lambda(
+        mask_aware_mean, mask_aware_mean_output_shape, name='code_embedding_mean')(code_embedding)
 
-    return code_input, code_embedding_mean
+    return code_input, code_embedding
 
 
-def get_docstring_input_and_embedding_layer():
-    docstring_input = layers.Input(shape=(shared.DOCSTRING_MAX_SEQ_LENGTH,), name='docstring_input')
-    docstring_embedding = layers.Embedding(
-        input_length=shared.DOCSTRING_MAX_SEQ_LENGTH,
-        input_dim=shared.DOCSTRING_VOCABULARY_SIZE,
+def get_query_input_and_embedding_layer():
+    query_input = layers.Input(shape=(shared.QUERY_MAX_SEQ_LENGTH,), name='query_input')
+    query_embedding = layers.Embedding(
+        input_length=shared.QUERY_MAX_SEQ_LENGTH,
+        input_dim=shared.QUERY_VOCABULARY_SIZE,
         output_dim=shared.EMBEDDING_SIZE,
-        name='docstring_embedding',
-        mask_zero=True)(docstring_input)
-    docstring_embedding = ZeroMaskedEntries()(docstring_embedding)
-    docstring_embedding = layers.Lambda(
-        mask_aware_mean, mask_aware_mean_output_shape, name='docstring_embedding_mean')(docstring_embedding)
+        name='query_embedding',
+        mask_zero=True)(query_input)
+    query_embedding = ZeroMaskedEntries()(query_embedding)
+    query_embedding = layers.Lambda(
+        mask_aware_mean, mask_aware_mean_output_shape, name='query_embedding_mean')(query_embedding)
 
-    return docstring_input, docstring_embedding
+    return query_input, query_embedding
 
 
 def cosine_similarity(x):
-    code_embedding, docstring_embedding = x
-    docstring_norms = tf.norm(docstring_embedding, axis=-1, keepdims=True) + 1e-10
+    code_embedding, query_embedding = x
+    query_norms = tf.norm(query_embedding, axis=-1, keepdims=True) + 1e-10
     code_norms = tf.norm(code_embedding, axis=-1, keepdims=True) + 1e-10
     return tf.matmul(
-        docstring_embedding / docstring_norms, code_embedding / code_norms, transpose_a=False, transpose_b=True)
+        query_embedding / query_norms, code_embedding / code_norms, transpose_a=False, transpose_b=True)
 
 
 def cosine_loss(_, cosine_similarity_matrix):
     neg_matrix = tf.linalg.diag(tf.fill(dims=[tf.shape(cosine_similarity_matrix)[0]], value=float('-inf')))
 
-    # Distance between docstring and code snippet should be as small as possible
+    # Distance between query and code snippet should be as small as possible
     diagonal_cosine_distance = 1. - tf.linalg.diag_part(cosine_similarity_matrix)
-    # Max. similarity between docstring and non-corresponding code snippet should be as small as possible
+    # Max. similarity between query and non-corresponding code snippet should be as small as possible
     max_positive_non_diagonal_similarity_in_row = tf.reduce_max(
         tf.nn.relu(cosine_similarity_matrix + neg_matrix), axis=-1)
 
@@ -93,24 +90,24 @@ def cosine_loss(_, cosine_similarity_matrix):
 
 def get_model() -> Model:
     code_input, code_embedding = get_code_input_and_embedding_layer()
-    docstring_input, docstring_embedding = get_docstring_input_and_embedding_layer()
+    query_input, query_embedding = get_query_input_and_embedding_layer()
 
     merge_layer = layers.Lambda(cosine_similarity, name='cosine_similarity')([
-        code_embedding, docstring_embedding
+        code_embedding, query_embedding
     ])
 
-    model = Model(inputs=[code_input, docstring_input], outputs=merge_layer)
+    model = Model(inputs=[code_input, query_input], outputs=merge_layer)
     model.compile(optimizer=optimizers.Adam(learning_rate=0.01), loss=cosine_loss)
     return model
 
 
-def generate_batch(padded_encoded_code_seqs, padded_encoded_docstring_seqs, batch_size: int):
+def generate_batch(padded_encoded_code_seqs, padded_encoded_query_seqs, batch_size: int):
     n_samples = padded_encoded_code_seqs.shape[0]
 
     shuffled_indices = np.arange(0, n_samples)
     np.random.shuffle(shuffled_indices)
     padded_encoded_code_seqs = padded_encoded_code_seqs[shuffled_indices, :]
-    padded_encoded_docstring_seqs = padded_encoded_docstring_seqs[shuffled_indices, :]
+    padded_encoded_query_seqs = padded_encoded_query_seqs[shuffled_indices, :]
 
     idx = 0
     while True:
@@ -118,50 +115,55 @@ def generate_batch(padded_encoded_code_seqs, padded_encoded_docstring_seqs, batc
         n_batch_samples = min(batch_size, end_idx - idx)
 
         batch_code_seqs = padded_encoded_code_seqs[idx:end_idx, :]
-        batch_docstring_seqs = padded_encoded_docstring_seqs[idx:end_idx, :]
+        batch_query_seqs = padded_encoded_query_seqs[idx:end_idx, :]
 
-        yield {'code_input': batch_code_seqs, 'docstring_input': batch_docstring_seqs}, np.zeros(n_batch_samples)
+        yield {'code_input': batch_code_seqs, 'query_input': batch_query_seqs}, np.zeros(n_batch_samples)
 
         idx += n_batch_samples
         if idx >= n_samples:
             idx = 0
 
 
-def train(language, verbose=True, use_wandb=False):
+def train(language, model_callbacks, verbose=True):
     model = get_model()
-    if verbose:
-        print(model.summary())
 
     train_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_train_code_seqs.npy'))
-    train_docstring_seqs = np.load(utils.get_saved_seqs_path(f'{language}_train_docstring_seqs.npy'))
+    train_query_seqs = np.load(utils.get_saved_seqs_path(f'{language}_train_query_seqs.npy'))
 
     valid_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_code_seqs.npy'))
-    valid_docstring_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_docstring_seqs.npy'))
+    valid_query_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_query_seqs.npy'))
 
     num_samples = train_code_seqs.shape[0]
-    batch_size = 1000
     model.fit_generator(
-        generate_batch(train_code_seqs, train_docstring_seqs, batch_size=batch_size),
+        generate_batch(train_code_seqs, train_query_seqs, batch_size=shared.TRAIN_BATCH_SIZE),
         epochs=200,
-        steps_per_epoch=num_samples // batch_size,
+        steps_per_epoch=num_samples // shared.TRAIN_BATCH_SIZE,
         verbose=2 if verbose else -1,
         callbacks=[
-            MrrEarlyStopping(valid_code_seqs, valid_docstring_seqs, patience=10)
-        ] + ([WandbCallback()] if use_wandb else [])
+            MrrEarlyStopping(valid_code_seqs, valid_query_seqs, patience=5)
+        ] + model_callbacks
     )
     model_serialize_path = f'model_{language}_{int(time.time())}.hdf5'
-    model.save(model_serialize_path)
+    model.save(utils.get_saved_model_path(model_serialize_path))
 
 
 if __name__ == '__main__':
-    USE_WANDB = False
+    USE_WANDB = True
 
     if USE_WANDB:
-        import wandb
-        wandb.init(project='glorified-code-search')
+        if len(sys.argv) == 1:
+            raise Exception('Running with WANDB enabled requires notes.')
 
-    for language_ in shared.LANGUAGES:
-        print(f'Training {language_}')
-        train(language_, use_wandb=USE_WANDB)
+        notes = sys.argv[1]
+        wandb.init(project='glorified-code-search', notes=notes, config=shared.get_wandb_config())
+        additional_callbacks = [
+            WandbCallback(monitor='val_loss', save_model=False)]
+    else:
+        additional_callbacks = []
 
+    # for language_ in shared.LANGUAGES:
+    #     print(f'Training {language_}')
+    #     train(language_, additional_callbacks)
+
+    # evaluate_model.evaluate_mean_mrr(USE_WANDB)
     evaluate_model.emit_ndcg_model_predictions(USE_WANDB)

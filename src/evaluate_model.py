@@ -1,3 +1,4 @@
+import gc
 import glob
 import os
 import random
@@ -14,8 +15,10 @@ from sklearn.neighbors import NearestNeighbors
 import prepare_data
 import train_model
 import utils
+import shared
 
-random.seed(123)
+np.random.seed(0)
+random.seed(0)
 
 
 def get_model_paths_and_languages():
@@ -37,10 +40,10 @@ def get_code_embedding_predictor(model):
         outputs=model.get_layer('code_embedding_mean').output)
 
 
-def get_docstring_embedding_predictor(model):
+def get_query_embedding_predictor(model):
     return Model(
-        inputs=model.get_layer('docstring_input').input,
-        outputs=model.get_layer('docstring_embedding_mean').output)
+        inputs=model.get_layer('query_input').input,
+        outputs=model.get_layer('query_embedding_mean').output)
 
 
 def emit_ndcg_model_predictions(use_wandb=False):
@@ -52,18 +55,24 @@ def emit_ndcg_model_predictions(use_wandb=False):
     for model_path, language in get_model_paths_and_languages():
         print(f'Evaluating {language}')
 
-        docs = utils.get_pickled_object(utils.get_saved_seqs_path(f'{language}_valid_docs.pckl'))
+        docs = [{'url': doc['url'], 'identifier': doc['identifier']}
+                for doc in utils.iter_jsonl(utils.get_code_data_path(f'{language}_definitions.jsonl'))]
 
         model = train_model.get_model()
         model.load_weights(model_path, by_name=True)
         code_embedding_predictor = get_code_embedding_predictor(model)
-        docstring_embedding_predictor = get_docstring_embedding_predictor(model)
+        query_embedding_predictor = get_query_embedding_predictor(model)
 
-        train_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_train_code_seqs.npy'))
-        code_embeddings = code_embedding_predictor.predict(train_code_seqs)
+        evaluation_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_evaluation_code_seqs.npy'))
+        code_embeddings = code_embedding_predictor.predict(evaluation_code_seqs)
 
-        query_seqs = prepare_data.pad_encode_docstring_seqs(language, query_tokens)
-        query_embeddings = docstring_embedding_predictor.predict(query_seqs)
+        del evaluation_code_seqs
+        gc.collect()
+
+        query_seqs = prepare_data.pad_encode_seqs(
+            language, 'query', prepare_data.preprocess_query_tokens, query_tokens,
+            shared.QUERY_MAX_SEQ_LENGTH)
+        query_embeddings = query_embedding_predictor.predict(query_seqs)
 
         nn = NearestNeighbors(n_neighbors=100, metric='cosine', n_jobs=-1)
         nn.fit(code_embeddings)
@@ -79,15 +88,18 @@ def emit_ndcg_model_predictions(use_wandb=False):
                     'url': docs[query_nearest_code_idx]['url'],
                 })
 
+        del docs
+        gc.collect()
+
     df_predictions = pd.DataFrame(predictions, columns=['query', 'language', 'identifier', 'url'])
     save_path = os.path.join(wandb.run.dir, 'model_predictions.csv') if use_wandb else '../model_predictions.csv'
     df_predictions.to_csv(save_path, index=False)
 
 
-def evaluate_mean_mrr(
-        model, padded_encoded_code_validation_seqs, padded_encoded_docstring_validation_seqs, batch_size=1000):
+def evaluate_model_mean_mrr(
+        model, padded_encoded_code_validation_seqs, padded_encoded_query_validation_seqs, batch_size=1000):
     code_embedding_predictor = get_code_embedding_predictor(model)
-    docstring_embedding_predictor = get_docstring_embedding_predictor(model)
+    query_embedding_predictor = get_query_embedding_predictor(model)
 
     n_samples = padded_encoded_code_validation_seqs.shape[0]
     indices = list(range(n_samples))
@@ -99,10 +111,10 @@ def evaluate_mean_mrr(
 
         code_embeddings = code_embedding_predictor.predict(
             padded_encoded_code_validation_seqs[idx_chunk, :])
-        docstring_embeddings = docstring_embedding_predictor.predict(
-            padded_encoded_docstring_validation_seqs[idx_chunk, :])
+        query_embeddings = query_embedding_predictor.predict(
+            padded_encoded_query_validation_seqs[idx_chunk, :])
 
-        distance_matrix = cdist(docstring_embeddings, code_embeddings, 'cosine')
+        distance_matrix = cdist(query_embeddings, code_embeddings, 'cosine')
         correct_elements = np.expand_dims(np.diag(distance_matrix), axis=-1)
         ranks = np.sum(distance_matrix <= correct_elements, axis=-1)
         mrrs.append(np.mean(1.0 / ranks))
@@ -110,21 +122,38 @@ def evaluate_mean_mrr(
     return np.mean(mrrs)
 
 
-def evaluate(language, model_path):
+def evaluate_language_mean_mrr(language, model_path):
     model = train_model.get_model()
     model.load_weights(model_path, by_name=True)
 
-    test_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_code_seqs.npy'))
-    test_docstring_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_docstring_seqs.npy'))
+    valid_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_code_seqs.npy'))
+    valid_query_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_query_seqs.npy'))
+    valid_mean_mrr = evaluate_model_mean_mrr(model, valid_code_seqs, valid_query_seqs)
 
-    print('Test Mean MRR: ', evaluate_mean_mrr(model, test_code_seqs, test_docstring_seqs))
+    test_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_test_code_seqs.npy'))
+    test_query_seqs = np.load(utils.get_saved_seqs_path(f'{language}_test_query_seqs.npy'))
+    test_mean_mrr = evaluate_model_mean_mrr(model, test_code_seqs, test_query_seqs)
+
+    print('Valid Mean MRR:', valid_mean_mrr, 'Test Mean MRR:', test_mean_mrr)
+    return valid_mean_mrr, test_mean_mrr
 
 
-def main():
+def evaluate_mean_mrr(use_wandb=False):
+    language_valid_mrrs = {}
+    language_test_mrrs = {}
     for model_path, language in get_model_paths_and_languages():
-        print(f'Evaluating {language}')
-        evaluate(language, model_path)
+        print(f'Evaluating {language}: ', end='')
+        valid_mrr, test_mrr = evaluate_language_mean_mrr(language, model_path)
+        language_valid_mrrs[f'{language}_valid_mrr'] = valid_mrr
+        language_test_mrrs[f'{language}_test_mrr'] = test_mrr
+
+    valid_mean_mrr = np.mean(list(language_valid_mrrs.values()))
+    test_mean_mrr = np.mean(list(language_test_mrrs.values()))
+    print('ALL: Valid mean MRR:', valid_mean_mrr, 'Test mean MRR:', test_mean_mrr)
+    if use_wandb:
+        wandb.log({'valid_mean_mrr': valid_mean_mrr, 'test_mean_mrr': test_mean_mrr,
+                   **language_valid_mrrs, **language_test_mrrs})
 
 
 if __name__ == '__main__':
-    main()
+    evaluate_mean_mrr()

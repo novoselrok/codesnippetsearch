@@ -6,5 +6,6 @@ data/
 saved_models/
 saved_vocabularies/
 saved_seqs/
+saved_docs/
 wandb/
 src/wandb/
