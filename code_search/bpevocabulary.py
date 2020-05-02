@@ -1,11 +1,15 @@
-## Code adapted from https://github.com/soaxelbrooke/python-bpe/blob/master/bpe/encoder.py
-## MIT License (see repository)
+"""
+An encoder which learns byte pair encodings for white-space separated text.  Can tokenize, encode, and decode.
 
-
-""" An encoder which learns byte pair encodings for white-space separated text.  Can tokenize, encode, and decode. """
+Code adapted from: https://github.com/github/CodeSearchNet/blob/master/src/utils/bpevocabulary.py
+Originally code adapted from: https://github.com/soaxelbrooke/python-bpe/blob/master/bpe/encoder.py
+MIT License (see repository)
+"""
 import typing
-from typing import Optional, Dict, Iterable, Callable, List, Any, Iterator
+from typing import Optional, Dict, Iterable, List, Iterator
 from collections import Counter
+
+from code_search import shared
 
 DEFAULT_EOW = '__eow'
 DEFAULT_SOW = '__sow'
@@ -147,7 +151,7 @@ class BpeVocabulary(typing.Sized):
 
         return tokens
 
-    def transform(self, sentences: Iterable[List[str]], reverse=False, fixed_length=None) -> Iterable[List[str]]:
+    def transform(self, sentences: shared.TokensGenerator, reverse=False, fixed_length=None) -> Iterable[List[str]]:
         """ Turns tokens into vocab idxs """
         direction = -1 if reverse else 1
         for sentence in sentences:

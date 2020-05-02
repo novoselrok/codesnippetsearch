@@ -1,25 +1,28 @@
-import sys
 import random
-import time
+import sys
 
 import numpy as np
 import tensorflow as tf
-from keras import callbacks, layers, Model, optimizers
 import wandb
+from keras import callbacks, layers, Model, optimizers
 from wandb.keras import WandbCallback
 
-import evaluate_model
-import shared
-import utils
-from keras_utils import ZeroMaskedEntries, mask_aware_mean, mask_aware_mean_output_shape
+from code_search import evaluate_model
+from code_search import shared
+from code_search import utils
+from code_search.keras_utils import ZeroMaskedEntries, mask_aware_mean, mask_aware_mean_output_shape
+
 
 np.random.seed(0)
 random.seed(0)
 
 
 class MrrEarlyStopping(callbacks.EarlyStopping):
-    def __init__(self, padded_encoded_code_validation_seqs, padded_encoded_query_validation_seqs,
-                 patience=5, batch_size=1000):
+    def __init__(self,
+                 padded_encoded_code_validation_seqs,
+                 padded_encoded_query_validation_seqs,
+                 patience=5,
+                 batch_size=1000):
         super().__init__(monitor='val_mrr', mode='max', restore_best_weights=True, verbose=True, patience=patience)
         self.padded_encoded_code_validation_seqs = padded_encoded_code_validation_seqs
         self.padded_encoded_query_validation_seqs = padded_encoded_query_validation_seqs
@@ -29,7 +32,9 @@ class MrrEarlyStopping(callbacks.EarlyStopping):
         logs = logs or {}
 
         mean_mrr = evaluate_model.evaluate_model_mean_mrr(
-            self.model, self.padded_encoded_code_validation_seqs, self.padded_encoded_query_validation_seqs,
+            self.model,
+            self.padded_encoded_code_validation_seqs,
+            self.padded_encoded_query_validation_seqs,
             batch_size=self.batch_size)
 
         print('Mean MRR:', mean_mrr)
@@ -66,6 +71,18 @@ def get_query_input_and_embedding_layer():
     return query_input, query_embedding
 
 
+def get_code_embedding_predictor(model):
+    return Model(
+        inputs=model.get_layer('code_input').input,
+        outputs=model.get_layer('code_embedding_mean').output)
+
+
+def get_query_embedding_predictor(model):
+    return Model(
+        inputs=model.get_layer('query_input').input,
+        outputs=model.get_layer('query_embedding_mean').output)
+
+
 def cosine_similarity(x):
     code_embedding, query_embedding = x
     query_norms = tf.norm(query_embedding, axis=-1, keepdims=True) + 1e-10
@@ -97,7 +114,7 @@ def get_model() -> Model:
     ])
 
     model = Model(inputs=[code_input, query_input], outputs=merge_layer)
-    model.compile(optimizer=optimizers.Adam(learning_rate=0.01), loss=cosine_loss)
+    model.compile(optimizer=optimizers.Adam(learning_rate=shared.LEARNING_RATE), loss=cosine_loss)
     return model
 
 
@@ -127,11 +144,11 @@ def generate_batch(padded_encoded_code_seqs, padded_encoded_query_seqs, batch_si
 def train(language, model_callbacks, verbose=True):
     model = get_model()
 
-    train_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_train_code_seqs.npy'))
-    train_query_seqs = np.load(utils.get_saved_seqs_path(f'{language}_train_query_seqs.npy'))
+    train_code_seqs = utils.load_cached_seqs(language, 'train', 'code')
+    train_query_seqs = utils.load_cached_seqs(language, 'train', 'query')
 
-    valid_code_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_code_seqs.npy'))
-    valid_query_seqs = np.load(utils.get_saved_seqs_path(f'{language}_valid_query_seqs.npy'))
+    valid_code_seqs = utils.load_cached_seqs(language, 'valid', 'code')
+    valid_query_seqs = utils.load_cached_seqs(language, 'valid', 'query')
 
     num_samples = train_code_seqs.shape[0]
     model.fit_generator(
@@ -143,27 +160,30 @@ def train(language, model_callbacks, verbose=True):
             MrrEarlyStopping(valid_code_seqs, valid_query_seqs, patience=5)
         ] + model_callbacks
     )
-    model_serialize_path = f'model_{language}_{int(time.time())}.hdf5'
-    model.save(utils.get_saved_model_path(model_serialize_path))
+
+    model.save(utils.get_cached_model_path(language))
 
 
 if __name__ == '__main__':
-    USE_WANDB = True
+    # todo: add --wandb flag
+    USE_WANDB = False
 
     if USE_WANDB:
         if len(sys.argv) == 1:
+            # todo: add optional notes
             raise Exception('Running with WANDB enabled requires notes.')
 
         notes = sys.argv[1]
+        # todo: project name should be in env
         wandb.init(project='glorified-code-search', notes=notes, config=shared.get_wandb_config())
-        additional_callbacks = [
-            WandbCallback(monitor='val_loss', save_model=False)]
+        additional_callbacks = [WandbCallback(monitor='val_loss', save_model=False)]
     else:
         additional_callbacks = []
 
-    # for language_ in shared.LANGUAGES:
-    #     print(f'Training {language_}')
-    #     train(language_, additional_callbacks)
+    for language_ in shared.LANGUAGES:
+        print(f'Training {language_}')
+        train(language_, additional_callbacks)
 
-    # evaluate_model.evaluate_mean_mrr(USE_WANDB)
+    # TODO: add --no-evaluate flag
+    evaluate_model.evaluate_mean_mrr(USE_WANDB)
     evaluate_model.emit_ndcg_model_predictions(USE_WANDB)

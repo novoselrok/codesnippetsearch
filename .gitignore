@@ -1,11 +1,7 @@
 .idea/
 notebooks/.ipynb_checkpoints
-src/__pycache__
+code_search/__pycache__
 
-data/
-saved_models/
-saved_vocabularies/
-saved_seqs/
-saved_docs/
+cache/
 wandb/
 src/wandb/
