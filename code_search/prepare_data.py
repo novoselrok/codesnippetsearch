@@ -129,6 +129,14 @@ def pad_encode_seqs(
     return np.array(list(encoded_seqs))
 
 
+def pad_encode_query(query: str, language: str) -> np.ndarray:
+    seq = query.split(' ')
+    bpe = utils.load_cached_vocabulary(language, 'query')
+    encoded_seq = bpe.transform(
+        (utils.flatten(preprocess_query_tokens(seq_)) for seq_ in [seq]), fixed_length=shared.QUERY_MAX_SEQ_LENGTH)
+    return np.array(list(encoded_seq)[0])
+
+
 def prepare_set_seqs(args):
     language, set_ = args
     print(f'Building sequences for {language} {set_}')

@@ -1,5 +1,5 @@
+import argparse
 import random
-import sys
 
 import numpy as np
 import tensorflow as tf
@@ -164,26 +164,27 @@ def train(language, model_callbacks, verbose=True):
     model.save(utils.get_cached_model_path(language))
 
 
-if __name__ == '__main__':
-    # todo: add --wandb flag
-    USE_WANDB = False
+def main():
+    parser = argparse.ArgumentParser(description='Train individual language models from prepared data.')
+    parser.add_argument('--notes', default='')
+    utils.add_bool_arg(parser, 'wandb', default=False)
+    utils.add_bool_arg(parser, 'evaluate', default=True)
+    args = vars(parser.parse_args())
 
-    if USE_WANDB:
-        if len(sys.argv) == 1:
-            # todo: add optional notes
-            raise Exception('Running with WANDB enabled requires notes.')
-
-        notes = sys.argv[1]
-        # todo: project name should be in env
-        wandb.init(project='glorified-code-search', notes=notes, config=shared.get_wandb_config())
+    if args['wandb']:
+        wandb.init(project=shared.ENV['WAND_PROJECT_NAME'], notes=args['notes'], config=shared.get_wandb_config())
         additional_callbacks = [WandbCallback(monitor='val_loss', save_model=False)]
     else:
         additional_callbacks = []
 
-    for language_ in shared.LANGUAGES:
-        print(f'Training {language_}')
-        train(language_, additional_callbacks)
+    for language in shared.LANGUAGES:
+        print(f'Training {language}')
+        train(language, additional_callbacks)
 
-    # TODO: add --no-evaluate flag
-    evaluate_model.evaluate_mean_mrr(USE_WANDB)
-    evaluate_model.emit_ndcg_model_predictions(USE_WANDB)
+    if args['evaluate']:
+        evaluate_model.evaluate_mean_mrr(args['wandb'])
+        evaluate_model.emit_ndcg_model_predictions(args['wandb'])
+
+
+if __name__ == '__main__':
+    main()
