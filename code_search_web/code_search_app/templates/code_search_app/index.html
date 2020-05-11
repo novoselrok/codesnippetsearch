@@ -1,0 +1,40 @@
+{% extends 'code_search_app/base.html' %}
+{% load humanize %}
+{% load static %}
+
+{% block extracss %}
+    <link rel="stylesheet" href="{% static 'code_search_app/css/index.css' %}">
+    <link rel="stylesheet" href="{% static 'code_search_app/css/search_bar.css' %}">
+    <link rel="stylesheet" href="{% static 'code_search_app/css/code_document.css' %}">
+    <style>{{ syntax_highlight_css }}</style>
+{% endblock %}
+
+{% block content %}
+    <div class="title">Query {{ code_documents_count|intcomma }} code snippets using natural language</div>
+    {% include 'code_search_app/search_bar.html' %}
+    <div class="title example-queries-title">Try some of the example queries</div>
+    <div class="example-queries">
+        <div class="example_queries__column">
+            <div class="example-queries__column__example-query">
+                <a href="/search?query=k%20means%20clustering">k means clustering</a>
+            </div>
+            <div class="example-queries__column__example-query">
+                <a href="/search?query=scatter%20plot">scatter plot</a>
+            </div>
+            <div class="example-queries__column__example-query">
+                <a href="/search?query=regex%20case%20insensitive">regex case insensitive</a>
+            </div>
+        </div>
+        <div class="example_queries__column">
+            <div class="example-queries__column__example-query">
+                <a href="/search?query=deserialize%20json">deserialize json</a>
+            </div>
+            <div class="example-queries__column__example-query">
+                <a href="/search?query=all%20permutations%20of%20a%20list">all permutations of a list</a>
+            </div>
+            <div class="example-queries__column__example-query">
+                <a href="/search?query=linear%20regression">linear regression</a>
+            </div>
+        </div>
+    </div>
+{% endblock %}

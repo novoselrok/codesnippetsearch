@@ -1,0 +1,28 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CodeSnippetSearch {% block extratitle %}{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="shortcut icon" type="image/png" href="{% static 'code_search_app/img/logo.png' %}"/>
+
+    <link href="https://fonts.googleapis.com/css?family=Rubik&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'code_search_app/css/base.css' %}">
+    {% block extracss %}
+    {% endblock %}
+</head>
+<body>
+    <div class="center">
+        <div class="content-wrapper">
+            <div class="content-wrapper__content">
+                <div class="content-wrapper__content__content-padding">
+                    {% include 'code_search_app/header.html' %}
+                    {% block content %}
+                    {% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

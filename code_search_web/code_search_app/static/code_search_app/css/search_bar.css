@@ -1,0 +1,29 @@
+.search-bar {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin: 16px 0 16px 0;
+}
+
+.search-bar__query {
+    border: var(--primary-color) 2px solid;
+    border-radius: 5px;
+    box-shadow: 3px 3px 0 0 var(--shadow-color);
+    margin-right: 8px;
+    padding: 8px;
+    font-size: 16px;
+    flex: 1;
+    -webkit-appearance: none;
+}
+
+.search-bar__search-button {
+    display: flex;
+    align-items: center;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+    font-size: 16px;
+    padding: 8px;
+}

@@ -1,0 +1,21 @@
+.index-wrapper {
+    padding: 16px;
+}
+
+.title {
+    text-align: center;
+    font-size: 16px;
+    margin: 32px 0 16px 0;
+}
+
+.example-queries {
+    margin-top: 8px;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: space-evenly;
+}
+
+.example-queries__column__example-query {
+    margin-bottom: 8px;
+}
