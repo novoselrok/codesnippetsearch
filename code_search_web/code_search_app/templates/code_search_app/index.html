@@ -10,7 +10,8 @@
 {% endblock %}
 
 {% block content %}
-    <div class="title">Query {{ code_documents_count|intcomma }} code snippets using natural language</div>
+    <div class="title">Query {{ code_documents_count|intcomma }} code snippets using natural language. Find more information on the
+        <a href="https://github.com/novoselrok/codesnippetsearch">GitHub</a> page.</div>
     {% include 'code_search_app/search_bar.html' %}
     <div class="title example-queries-title">Try some of the example queries</div>
     <div class="example-queries">

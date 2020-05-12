@@ -80,7 +80,7 @@ Run `$ python search.py "read file lines"` and it will output 3 best ranked resu
 # Running the CodeSnippetSearch website locally
 
 - Requirements: A PostgreSQL database
-- Fill out the `ENV` object in `env.json` with DB credentials, `SECRET_KEY` and `ALLOWED_HOSTS`
+- Fill out the `WEB` object in `env.json` with DB credentials, `SECRET_KEY` and `ALLOWED_HOSTS`
 - Run migrations: `$ python manage.py migrate`
 - Create cache table: `$ python manage.py createcachetable`
 - Import code documents `$ python manage.py import_code_documents`
