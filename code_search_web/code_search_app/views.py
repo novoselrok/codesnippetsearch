@@ -45,7 +45,13 @@ def index_view(request):
     if request.method != 'GET':
         return HttpResponseBadRequest('Invalid HTTP method.')
 
-    code_documents_count = models.CodeDocument.objects.count()
+    code_documents_count_cache_key = 'code_documents_cache_key'
+    if code_documents_count_cache_key in cache:
+        code_documents_count = cache.get(code_documents_count_cache_key)
+    else:
+        code_documents_count = models.CodeDocument.objects.count()
+        cache.set(code_documents_count_cache_key, code_documents_count, timeout=None)  # Never expire
+
     return render(request, 'code_search_app/index.html', {
         'code_documents_count': code_documents_count,
     })
