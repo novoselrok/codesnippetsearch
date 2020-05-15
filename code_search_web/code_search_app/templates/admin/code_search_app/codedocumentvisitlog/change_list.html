@@ -1,0 +1,20 @@
+{% extends 'admin/change_list.html' %}
+{% load static %}
+{% block content %}
+
+<table>
+  <tr>
+    <th>Date</th>
+    <th>Visits</th>
+  </tr>
+    {% for row in visits_per_day %}
+      <tr>
+        <td>{{ row.date|date:"d M Y" }}</td>
+        <td>{{ row.n_visits }}</td>
+      </tr>
+    {% endfor %}
+</table>
+
+<!-- Render the rest of the ChangeList view by calling block.super -->
+{{ block.super }}
+{% endblock %}

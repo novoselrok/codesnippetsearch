@@ -27,7 +27,13 @@ class QueryLog(models.Model):
     query = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return f'{self.query} {self.created_at}'
+
 
 class CodeDocumentVisitLog(models.Model):
     code_document = models.ForeignKey(CodeDocument, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.code_document.file_path}:{self.code_document.identifier} {self.created_at}'
