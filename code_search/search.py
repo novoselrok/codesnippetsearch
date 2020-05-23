@@ -14,13 +14,12 @@ for language in shared.LANGUAGES:
 
     evaluation_docs = [{'url': doc['url'], 'identifier': doc['identifier']}
                        for doc in utils.load_cached_docs(language, 'evaluation')]
-    print('Read the docs')
 
     code_embeddings = utils.load_cached_code_embeddings(language)
 
     query_seqs = prepare_data.pad_encode_seqs(
         prepare_data.preprocess_query_tokens,
-        (line.split(' ') for line in [query]),
+        lambda: (line.split(' ') for line in [query]),
         shared.QUERY_MAX_SEQ_LENGTH,
         language,
         'query')
@@ -29,7 +28,6 @@ for language in shared.LANGUAGES:
     query_embedding_predictor = train_model.get_query_embedding_predictor(model)
     query_embeddings = query_embedding_predictor.predict(query_seqs)
 
-    # TODO: Replace with annoy index
     nn = NearestNeighbors(n_neighbors=3, metric='cosine', n_jobs=-1)
     nn.fit(code_embeddings)
     _, nearest_neighbor_indices = nn.kneighbors(query_embeddings)

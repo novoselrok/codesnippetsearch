@@ -29,7 +29,7 @@ def mask_aware_mean(x):
     n = K.sum(K.cast(mask, 'float32'), axis=1, keepdims=False)
 
     # compute mask-aware mean of x
-    x_mean = K.sum(x, axis=1, keepdims=False) / n
+    x_mean = K.sum(x, axis=1, keepdims=False) / (n + 1e-8)
 
     return x_mean
 

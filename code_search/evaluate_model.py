@@ -36,14 +36,13 @@ def emit_ndcg_model_predictions(use_wandb=False):
         query_embedding_predictor = train_model.get_query_embedding_predictor(model)
         query_seqs = prepare_data.pad_encode_seqs(
             prepare_data.preprocess_query_tokens,
-            (line.split(' ') for line in queries),
+            lambda: (line.split(' ') for line in queries),
             shared.QUERY_MAX_SEQ_LENGTH,
             language,
             'query')
         query_embeddings = query_embedding_predictor.predict(query_seqs)
 
-        # TODO: Query annoy index
-        nn = NearestNeighbors(n_neighbors=100, metric='cosine', n_jobs=-1)
+        nn = NearestNeighbors(n_neighbors=150, metric='cosine', n_jobs=-1)
         nn.fit(code_embeddings)
         _, nearest_neighbor_indices = nn.kneighbors(query_embeddings)
 

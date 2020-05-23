@@ -50,6 +50,7 @@ def get_code_input_and_embedding_layer():
         name='code_embedding',
         mask_zero=True)(code_input)
     code_embedding = ZeroMaskedEntries()(code_embedding)
+    code_embedding = layers.Dropout(0.3)(code_embedding)
     code_embedding = layers.Lambda(
         mask_aware_mean, mask_aware_mean_output_shape, name='code_embedding_mean')(code_embedding)
 
@@ -65,6 +66,7 @@ def get_query_input_and_embedding_layer():
         name='query_embedding',
         mask_zero=True)(query_input)
     query_embedding = ZeroMaskedEntries()(query_embedding)
+    query_embedding = layers.Dropout(0.2)(query_embedding)
     query_embedding = layers.Lambda(
         mask_aware_mean, mask_aware_mean_output_shape, name='query_embedding_mean')(query_embedding)
 
@@ -172,7 +174,7 @@ def main():
     args = vars(parser.parse_args())
 
     if args['wandb']:
-        wandb.init(project=shared.ENV['WAND_PROJECT_NAME'], notes=args['notes'], config=shared.get_wandb_config())
+        wandb.init(project=shared.ENV['WANDB_PROJECT_NAME'], notes=args['notes'], config=shared.get_wandb_config())
         additional_callbacks = [WandbCallback(monitor='val_loss', save_model=False)]
     else:
         additional_callbacks = []

@@ -1,9 +1,8 @@
 import functools
 import hashlib
 import operator
-import random
 
-from django.http import HttpResponseBadRequest
+from django.http import HttpResponseBadRequest, HttpResponse
 from django.shortcuts import render, get_object_or_404
 from django.core.cache import cache
 
@@ -65,6 +64,9 @@ def search_view(request):
     if not query or len(query.strip()) == 0:
         return HttpResponseBadRequest('Invalid or missing query.')
 
+    if len(query) > 256:
+        return HttpResponseBadRequest('Query too long.')
+
     models.QueryLog.objects.create(query=query)
 
     query_hash = hashlib.sha1(query.encode('utf-8')).hexdigest()
@@ -94,9 +96,18 @@ def search_view(request):
     })
 
 
-def code_document_view(request, code_hash):
+def code_document_visit_view(request, code_hash):
+    if request.method != 'POST':
+        return HttpResponseBadRequest('Invalid HTTP method.')
+
     code_document = get_object_or_404(models.CodeDocument, code_hash=code_hash)
     models.CodeDocumentVisitLog.objects.create(code_document=code_document)
+
+    return HttpResponse(status=204)
+
+
+def code_document_view(request, code_hash):
+    code_document = get_object_or_404(models.CodeDocument, code_hash=code_hash)
 
     cache_key = f'similar_code_documents:{code_hash}'
     if cache_key in cache:
