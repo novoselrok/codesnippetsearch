@@ -1,6 +1,7 @@
 import functools
 import hashlib
 import operator
+import re
 
 from django.http import HttpResponseBadRequest, HttpResponse
 from django.shortcuts import render, get_object_or_404
@@ -12,15 +13,16 @@ from code_search_app.shared import get_pygments_html_formatter
 
 RESULTS_PER_LANGUAGE = 10
 RANDOM_SNIPPETS = 3
+FILTER_BY_LANGUAGE_REGEX = re.compile(r'\+language=(\S+)')
 
 
 def get_syntax_highlight_css():
     return get_pygments_html_formatter().get_style_defs('.highlight')
 
 
-def get_nearest_query_neighbors_per_language(query):
+def get_nearest_query_neighbors_per_language(query, languages):
     nearest_neighbors_per_language = {}
-    for language in shared.LANGUAGES:
+    for language in languages:
         query_seq = prepare_data.pad_encode_query(query, language)
 
         model = utils.load_cached_model_weights(language, train_model.get_model())
@@ -69,16 +71,27 @@ def search_view(request):
 
     models.QueryLog.objects.create(query=query)
 
+    language_filter_match = FILTER_BY_LANGUAGE_REGEX.search(query)
+    if language_filter_match is not None:
+        languages_match = language_filter_match.group(1).split(',')
+        languages = [language.lower() for language in languages_match if language.lower() in shared.LANGUAGES]
+        if len(languages) == 0:
+            return HttpResponseBadRequest('No valid languages present in the +language filter.')
+    else:
+        languages = shared.LANGUAGES
+
     query_hash = hashlib.sha1(query.encode('utf-8')).hexdigest()
     cache_key = f'query:{query_hash}'
     if cache_key in cache:
         nearest_neighbors_per_language = cache.get(cache_key)
     else:
-        nearest_neighbors_per_language = get_nearest_query_neighbors_per_language(query)
+        # Remove the filters from the query
+        filterless_query = FILTER_BY_LANGUAGE_REGEX.sub('', query)
+        nearest_neighbors_per_language = get_nearest_query_neighbors_per_language(filterless_query, languages)
         cache.set(cache_key, nearest_neighbors_per_language, timeout=None)  # Never expire
 
     code_documents_with_distances = []
-    for language in shared.LANGUAGES:
+    for language in languages:
         indices, distances = nearest_neighbors_per_language[language]
         distances_sorted_by_index = map(operator.itemgetter(1), sorted(zip(indices, distances)))
         code_documents = models.CodeDocument.objects.filter(
@@ -90,7 +103,7 @@ def search_view(request):
     code_documents = sorted(code_documents_with_distances, key=functools.cmp_to_key(lambda a, b: a[0] - b[0]))
     return render(request, 'code_search_app/search.html', {
         'query': query,
-        'languages': shared.LANGUAGES,
+        'languages': languages,
         'code_documents': code_documents,
         'syntax_highlight_css': get_syntax_highlight_css()
     })

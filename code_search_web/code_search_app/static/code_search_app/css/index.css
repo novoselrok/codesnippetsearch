@@ -8,6 +8,10 @@
     margin: 32px 0 16px 0;
 }
 
+.filtering-instructions {
+    text-align: center;
+}
+
 .example-queries {
     margin-top: 8px;
     text-align: center;
@@ -18,4 +22,8 @@
 
 .example-queries__column__example-query {
     margin-bottom: 8px;
+}
+
+.example-queries__column__example-query a {
+    text-decoration: none;
 }

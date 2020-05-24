@@ -12,14 +12,18 @@
 {% block content %}
     <div class="title">Query {{ code_documents_count|intcomma }} code snippets using natural language.</div>
     {% include 'code_search_app/search_bar.html' %}
+    <div class="filtering-instructions">
+        <p>Filter by language by appending <code>+language=(comma-separated list of languages)</code> to the query.</p>
+        <p>Currently supported languages are <code>go</code>, <code>java</code>, <code>javascript</code>, <code>python</code>, <code>php</code> and <code>ruby</code>.</p>
+    </div>
     <div class="title example-queries-title">Try some of the example queries</div>
     <div class="example-queries">
         <div class="example_queries__column">
             <div class="example-queries__column__example-query">
-                <a href="/search?query=k%20means%20clustering">k means clustering</a>
+                <a href="/search?query=k%20means%20clustering%20%2Blanguage%3Dpython">k means clustering +language=python</a>
             </div>
             <div class="example-queries__column__example-query">
-                <a href="/search?query=scatter%20plot">scatter plot</a>
+                <a href="/search?query=scatter%20plot%20%2Blanguage%3Dpython%2Cjavascript">scatter plot +language=python,javascript</a>
             </div>
             <div class="example-queries__column__example-query">
                 <a href="/search?query=regex%20case%20insensitive">regex case insensitive</a>
@@ -30,7 +34,7 @@
                 <a href="/search?query=deserialize%20json">deserialize json</a>
             </div>
             <div class="example-queries__column__example-query">
-                <a href="/search?query=all%20permutations%20of%20a%20list">all permutations of a list</a>
+                <a href="/search?query=all%20permutations%20of%20a%20list%20%2Blanguage%3Djava">all permutations of a list +language=java</a>
             </div>
             <div class="example-queries__column__example-query">
                 <a href="/search?query=linear%20regression">linear regression</a>

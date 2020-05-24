@@ -16,14 +16,16 @@
 {% block content %}
     {% include 'code_search_app/search_bar.html' with query=query %}
     <div class="filters">
-        <div class="filters__languages">
-            <div class="filters__languages__language filters__languages__language--active chip"
-                 data-language="all">All</div>
-            {% for language in languages %}
-                <div class="filters__languages__language chip"
-                     data-language="{{ language }}">{{ language|capfirst }}</div>
-            {% endfor %}
-        </div>
+        {% if languages|length > 1 %}
+            <div class="filters__languages">
+                <div class="filters__languages__language filters__languages__language--active chip"
+                     data-language="all">All</div>
+                {% for language in languages %}
+                    <div class="filters__languages__language chip"
+                         data-language="{{ language }}">{{ language|capfirst }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
     </div>
     <div class="code-documents">
         {% for distance, code_document in code_documents %}
