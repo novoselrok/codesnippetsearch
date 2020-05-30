@@ -21,7 +21,7 @@
     <div class="similar-code-documents-title">Similar code snippets</div>
     <div class="code-documents">
         {% for distance, similar_code_document in similar_code_documents %}
-            {% include 'code_search_app/code_document.html' with code_document=similar_code_document result_number=forloop.counter include_similar_functions_link=1 %}
+            {% include 'code_search_app/code_document.html' with code_document=similar_code_document result_number=forloop.counter include_similar_functions_link=1 include_ratings=0 %}
         {% endfor %}
     </div>
     <div id="csrf-token">

@@ -1,7 +1,7 @@
 {% load static %}
 {% load code_search_filters %}
 
-<div class="code-document" data-language="{{ code_document.language }}">
+<div class="code-document" data-language="{{ code_document.language }}" data-id="{{ code_document.code_hash }}">
     <div class="code-document__header">
         <div class="code-document__header__left">
             {% if result_number %}
@@ -45,4 +45,15 @@
     <div class="code-document__code">
         {{ code_document|syntax_highlight|safe }}
     </div>
+    {% if include_ratings %}
+        <div class="code-document__ratings">
+            <div class="code-document__ratings__instruction">Rate this result:</div>
+            {% for rating in 4|range %}
+                <div class="chip code-document__ratings__rating_number {% if existing_rating and existing_rating == rating %}code-document__ratings__rating_number--active{% endif %}"
+                     data-rating="{{ rating }}">
+                    {{ rating }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
 </div>

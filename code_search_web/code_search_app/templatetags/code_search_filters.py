@@ -25,3 +25,13 @@ def basename(file_path):
 def cosine_match_rating(distance):
     # 2.0 is the maximum cosine distance
     return str(round(((2.0 - distance) / 2.0) * 100, 2))
+
+
+@register.filter(name='range')
+def num_range(max_num):
+    return range(max_num)
+
+
+@register.filter(name='get_item')
+def get_item(dictionary, key):
+    return dictionary.get(key)

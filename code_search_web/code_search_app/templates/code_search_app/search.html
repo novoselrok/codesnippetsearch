@@ -29,13 +29,18 @@
     </div>
     <div class="code-documents">
         {% for distance, code_document in code_documents %}
-            {% include 'code_search_app/code_document.html' with code_document=code_document result_number=forloop.counter include_similar_functions_link=1 %}
+            {% include 'code_search_app/code_document.html' with code_document=code_document result_number=forloop.counter include_similar_functions_link=1 include_ratings=1 existing_rating=code_hash_to_rating|get_item:code_document.code_hash %}
         {% endfor %}
+    </div>
+    <div id="csrf-token">
+        {% csrf_token %}
     </div>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            var languageFilterChips = document.querySelectorAll('.filters__languages__language');
+            var query = '{{ query|escapejs }}';
+            var csrftoken = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
+            var languageFilterChips = document.querySelectorAll('.filters__languages__language');
             function onLanguageFilterChipClick(e) {
                 var chip = e.target;
                 var language = chip.dataset.language;
@@ -55,10 +60,39 @@
                     }
                 });
             }
-
             languageFilterChips.forEach(function (languageFilterChip) {
                 languageFilterChip.addEventListener('click', onLanguageFilterChipClick);
-            })
+            });
+
+            var ratingChips = document.querySelectorAll('.code-document__ratings__rating_number');
+            function onRatingChipClick(e) {
+                var ratingChip = e.target;
+                var rating = parseInt(ratingChip.dataset.rating);
+                var codeDocument = ratingChip.closest('.code-document');
+                var codeDocumentRatingChips = codeDocument.querySelectorAll('.code-document__ratings__rating_number');
+
+                var queryRatingUrl = '/code/' + codeDocument.dataset.id + '/query-rating';
+                if (window.fetch) {
+                    fetch(queryRatingUrl, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            'query': query,
+                            'rating': rating,
+                        }),
+                        headers: {
+                            'X-CSRFToken': csrftoken
+                        }
+                    });
+
+                    codeDocumentRatingChips.forEach(function (ratingChip) {
+                        ratingChip.classList.remove('code-document__ratings__rating_number--active');
+                    });
+                    ratingChip.classList.add('code-document__ratings__rating_number--active');
+                }
+            }
+            ratingChips.forEach(function (ratingChip) {
+                ratingChip.addEventListener('click', onRatingChipClick);
+            });
         })
     </script>
 {% endblock %}

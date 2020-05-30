@@ -9,6 +9,10 @@ class CodeDocumentAdmin(admin.ModelAdmin):
     pass
 
 
+class CodeDocumentQueryRatingAdmin(admin.ModelAdmin):
+    raw_id_fields = ('code_document',)
+
+
 class QueryLogAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
@@ -41,3 +45,4 @@ class CodeDocumentVisitLogAdmin(admin.ModelAdmin):
 admin.site.register(models.CodeDocument, CodeDocumentAdmin)
 admin.site.register(models.QueryLog, QueryLogAdmin)
 admin.site.register(models.CodeDocumentVisitLog, CodeDocumentVisitLogAdmin)
+admin.site.register(models.CodeDocumentQueryRating, CodeDocumentQueryRatingAdmin)

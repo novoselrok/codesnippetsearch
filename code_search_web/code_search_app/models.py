@@ -37,3 +37,14 @@ class CodeDocumentVisitLog(models.Model):
 
     def __str__(self):
         return f'{self.code_document.file_path}:{self.code_document.identifier} {self.created_at}'
+
+
+class CodeDocumentQueryRating(models.Model):
+    code_document = models.ForeignKey(CodeDocument, on_delete=models.CASCADE)
+    query = models.TextField()
+    rating = models.IntegerField()
+    rater_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.query}:{self.code_document.identifier}:{self.rating} {self.created_at}'
