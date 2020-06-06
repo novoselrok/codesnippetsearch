@@ -19,7 +19,7 @@ cycler==0.10.0
 cymem==2.0.3
 decorator==4.4.2
 defusedxml==0.6.0
-Django==3.0.5
+Django==3.0.7
 docker-pycreds==0.4.0
 docutils==0.15.2
 entrypoints==0.3
