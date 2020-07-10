@@ -3,23 +3,18 @@ notebooks/.ipynb_checkpoints
 __pycache__/
 *.pyc
 
-cache/anns/*
-!cache/anns/.gitkeep
+build/*
+!build/.gitkeep
 
-cache/code_embeddings/*
-!cache/code_embeddings/.gitkeep
+codesearchnet_data/*
+!codesearchnet_data/.gitkeep
+!codesearchnet_data/queries.csv
 
-cache/docs/*
-!cache/docs/.gitkeep
+serialized_data/languages/*
+!serialized_data/languages/.gitkeep
 
-cache/models/*
-!cache/models/.gitkeep
-
-cache/seqs/*
-!cache/seqs/.gitkeep
-
-cache/vocabularies/*
-!cache/vocabularies/.gitkeep
+serialized_data/repositories/*
+!serialized_data/repositories/.gitkeep
 
 wandb/
 src/wandb/
