@@ -1,32 +1,27 @@
 import argparse
-import random
 import time
 from collections import OrderedDict
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import torch
 import torch.nn.functional as F
 import numpy as np
 
 import wandb
-from more_itertools import chunked
-from scipy.spatial.distance import cdist
 from torch import optim
 
 from code_search import shared, utils
-from code_search.model import CodeSearchNet
-
-
-def get_device():
-    return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+from code_search.data_manager import DataManager
+from code_search.model import CodeSearchNN, get_base_language_model
+from code_search.torch_utils import get_device, np_to_torch
+from code_search.evaluate import evaluate_mrr
 
 
 class EarlyStopping:
     """Early stops the training if score doesn't improve after a given patience."""
-
-    def __init__(self, model, path, patience=5, verbose=False):
+    def __init__(self, model, data_manager: DataManager, patience=5, verbose=False):
         self.model = model
-        self.path = path
+        self.data_manager = data_manager
         self.patience = patience
         self.verbose = verbose
         self.counter = 0
@@ -52,7 +47,7 @@ class EarlyStopping:
         return False
 
     def save_model(self):
-        utils.serialize_model(self.model.state_dict(), self.path)
+        self.data_manager.save_torch_model(self.model)
 
 
 def generate_batch(
@@ -97,8 +92,8 @@ def generate_batch(
         remaining_samples = sum(n_language_remaining_samples.values())
 
 
-def cosine_loss(cosine_similarity_matrix):
-    neg_matrix = torch.zeros(*list(cosine_similarity_matrix.shape), requires_grad=True).to(get_device())
+def cosine_loss(cosine_similarity_matrix, device: torch.device):
+    neg_matrix = torch.zeros(*list(cosine_similarity_matrix.shape), requires_grad=True).to(device)
     neg_matrix.fill_diagonal_(float('-inf'))
 
     # Distance between query and code snippet should be as small as possible
@@ -111,85 +106,40 @@ def cosine_loss(cosine_similarity_matrix):
     return torch.mean(per_sample_loss)
 
 
-def get_language_mrrs(model: CodeSearchNet,
-                      language: str,
-                      code_seqs: torch.Tensor,
-                      query_seqs: torch.Tensor,
-                      batch_size=1000,
-                      seed=0):
-    n_samples = code_seqs.shape[0]
-    indices = list(range(n_samples))
-    random.Random(seed).shuffle(indices)
-
-    mrrs = []
-    for idx_chunk in chunked(indices, batch_size):
-        if len(idx_chunk) < batch_size:
-            continue
-
-        code_embeddings = model.encode_code(language, code_seqs[idx_chunk]).cpu().numpy()
-        query_embeddings = model.encode_query(query_seqs[idx_chunk]).cpu().numpy()
-
-        distance_matrix = cdist(query_embeddings, code_embeddings, 'cosine')
-        correct_elements = np.expand_dims(np.diag(distance_matrix), axis=-1)
-        ranks = np.sum(distance_matrix <= correct_elements, axis=-1)
-        mrrs.append(np.mean(1.0 / ranks))
-
-    return mrrs
-
-
-def get_mrrs_per_language(model: CodeSearchNet,
-                          language_code_seqs: Dict[str, np.ndarray],
-                          language_query_seqs: Dict[str, np.ndarray]):
-    device = get_device()
-    language_mrrs = {}
-    for language in language_code_seqs.keys():
-        valid_code_seqs = np_to_torch(language_code_seqs[language], device)
-        valid_query_seqs = np_to_torch(language_query_seqs[language], device)
-        language_mrrs[language] = get_language_mrrs(model, language, valid_code_seqs, valid_query_seqs)
-    return language_mrrs
-
-
-def np_to_torch(arr: np.ndarray, device: torch.device):
-    return torch.from_numpy(arr).to(device)
-
-
-def get_model():
-    return CodeSearchNet(
-        shared.LANGUAGES, shared.EMBEDDING_SIZE, shared.CODE_VOCABULARY_SIZE, shared.QUERY_VOCABULARY_SIZE)
-
-
-def load_language_set_seqs(languages: List[str], set_: str):
+def load_language_set_seqs(data_manager: DataManager, languages: List[str], set_: shared.DataSet):
     language_code_seqs = OrderedDict()
     language_query_seqs = OrderedDict()
     for language in languages:
-        language_dir = utils.get_base_language_serialized_data_path(language)
-        language_code_seqs[language] = utils.load_serialized_seqs(language_dir, 'code', set_=set_)
-        language_query_seqs[language] = utils.load_serialized_seqs(language_dir, 'query', set_=set_)
+        language_code_seqs[language] = data_manager.get_language_seqs(language, shared.DataType.CODE, set_)
+        language_query_seqs[language] = data_manager.get_language_seqs(language, shared.DataType.QUERY, set_)
     return language_code_seqs, language_query_seqs
 
 
-def train(model: CodeSearchNet,
-          language_code_seqs: Dict[str, np.ndarray],
-          language_query_seqs: Dict[str, np.ndarray],
-          model_save_path: str,
+def train(model: CodeSearchNN,
+          train_language_seqs: Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]],
+          valid_language_seqs: Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]],
+          data_manager: DataManager,
+          device: torch.device,
           learning_rate=1e-3,
           batch_size=1000,
           max_epochs=100,
           verbose=True):
-    device = get_device()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    es = EarlyStopping(model, model_save_path, verbose=verbose)
+    es = EarlyStopping(model, data_manager, verbose=verbose)
+
+    train_language_code_seqs, train_language_query_seqs = train_language_seqs
+    valid_language_code_seqs, valid_language_query_seqs = valid_language_seqs
 
     for epoch in range(max_epochs):
         if verbose:
-            print(f'Epoch {epoch}')
+            print(f'=== Epoch {epoch} ===')
         epoch_start = time.time()
 
         model.train()
 
         loss_per_batch = []
         for batch_language_code_seqs, batch_language_query_seqs in generate_batch(
-                language_code_seqs, language_query_seqs, batch_size):
+                train_language_code_seqs, train_language_query_seqs, batch_size):
             for language in batch_language_code_seqs.keys():
                 if batch_language_code_seqs[language] is None:
                     continue
@@ -199,7 +149,7 @@ def train(model: CodeSearchNet,
 
             optimizer.zero_grad()
             output = model(batch_language_code_seqs, batch_language_query_seqs)
-            loss = cosine_loss(output)
+            loss = cosine_loss(output, device)
             loss.backward()
             optimizer.step()
 
@@ -207,15 +157,18 @@ def train(model: CodeSearchNet,
 
         model.eval()
         with torch.no_grad():
-            validation_mrr = get_mrrs_per_language(model, 'valid')
-
-        if es(validation_mrr):
-            break
+            validation_mean_mrr, validation_mean_mrr_per_language = evaluate_mrr(
+                model, valid_language_code_seqs, valid_language_query_seqs, device)
 
         if verbose:
             mean_loss_per_batch = np.mean(loss_per_batch)
             epoch_duration = time.time() - epoch_start
-            print(f'Duration: {epoch_duration:.1f}s, Train loss: {mean_loss_per_batch:.4f}')
+            print(f'Duration: {epoch_duration:.1f}s')
+            print(f'Train loss: {mean_loss_per_batch:.4f}, Valid MRR: {validation_mean_mrr:.4f}')
+            print(f'Valid MRR per language: {validation_mean_mrr_per_language}')
+
+        if es(validation_mean_mrr):
+            break
 
 
 def main():
@@ -224,66 +177,38 @@ def main():
     utils.add_bool_arg(parser, 'wandb', default=False)
     args = vars(parser.parse_args())
 
-    language_code_seqs = OrderedDict()
-    language_query_seqs = OrderedDict()
+    data_manager = DataManager(shared.BASE_LANGUAGES_DIR)
+    train_language_seqs = load_language_set_seqs(
+        data_manager, shared.LANGUAGES, shared.DataSet.TRAIN)
+    valid_language_seqs = load_language_set_seqs(
+        data_manager, shared.LANGUAGES, shared.DataSet.VALID)
 
-    for language in shared.LANGUAGES:
-        language_dir = utils.get_base_language_serialized_data_path(language)
-        language_code_seqs[language] = utils.load_serialized_seqs(language_dir, 'code', set_='train')
-        language_query_seqs[language] = utils.load_serialized_seqs(language_dir, 'query', set_='train')
-
-    model = get_model().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=shared.LEARNING_RATE)
-    es = EarlyStopping(model, shared.BASE_LANGUAGES_DIR, verbose=True)
+    device = get_device()
+    model = get_base_language_model(device)
 
     if args['wandb']:
         wandb.init(project=shared.ENV['WANDB_PROJECT_NAME'], notes=args['notes'], config=shared.get_wandb_config())
         wandb.watch(model)
 
-    for epoch in range(100):
-        print(f'Epoch {epoch}')
-        epoch_start = time.time()
+    train(
+        model,
+        train_language_seqs,
+        valid_language_seqs,
+        data_manager,
+        device,
+        learning_rate=shared.LEARNING_RATE,
+        batch_size=shared.TRAIN_BATCH_SIZE)
 
-        model.train()
-        losses = []
+    test_language_code_seqs, test_language_query_seqs = load_language_set_seqs(
+        data_manager, shared.LANGUAGES, shared.DataSet.TEST)
 
-        for batch_language_code_seqs, batch_language_query_seqs in generate_batch(
-                language_code_seqs, language_query_seqs, shared.TRAIN_BATCH_SIZE):
-
-            for language in shared.LANGUAGES:
-                if batch_language_code_seqs[language] is None:
-                    continue
-
-                batch_language_code_seqs[language] = torch.from_numpy(batch_language_code_seqs[language]).to(device)
-                batch_language_query_seqs[language] = torch.from_numpy(
-                    batch_language_query_seqs[language]).to(device)
-
-            optimizer.zero_grad()
-            output = model(batch_language_code_seqs, batch_language_query_seqs)
-            loss = cosine_loss(output)
-            loss.backward()
-            optimizer.step()
-
-            losses.append(loss.item())
-
-        epoch_duration = time.time() - epoch_start
-        mean_loss = np.mean(losses)
-        print(f'Duration: {epoch_duration:.1f}s, Loss: {mean_loss:.4f}')
-
-        model.eval()
-        with torch.no_grad():
-            validation_mrr = evaluate_mrr(model, 'valid')
-
-        if args['wandb']:
-            wandb.log({'loss': mean_loss, 'mrr': validation_mrr})
-
-        if es(validation_mrr):
-            break
-
-    # TODO: Load best saved model
-    model.eval()
+    best_model = data_manager.get_torch_model(model)
+    best_model.eval()
     with torch.no_grad():
-        evaluate_mrr(model, 'test')
+        test_mean_mrr, test_mean_mrr_per_language = evaluate_mrr(
+            best_model, test_language_code_seqs, test_language_query_seqs, device)
+        print(f'Test MRR: {test_mean_mrr:.4f}')
+        print(f'Test MRR: {test_mean_mrr_per_language}')
 
 
 if __name__ == '__main__':

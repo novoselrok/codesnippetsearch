@@ -3,8 +3,8 @@ from typing import Dict, List
 import numpy as np
 
 from code_search.bpevocabulary import BpeVocabulary
-from code_search import shared, utils, train_model
-from code_search.prepare_data import preprocess_doc, build_vocabulary, prepare_corpus_seqs
+from code_search import shared, utils
+from code_search.prepare_data import preprocess_doc, build_vocabulary
 
 
 def prepare_repository_language_corpora(repository_language: shared.RepositoryLanguage):
@@ -107,10 +107,3 @@ def prepare_repository_language_embedding_weights(repository_language: shared.Re
 
     prepare_repository_language_type_embedding_weights(base_language_dir, repository_language_dir, 'code')
     prepare_repository_language_type_embedding_weights(base_language_dir, repository_language_dir, 'query')
-
-
-def prepare_repository_language_seqs(repository_language: shared.RepositoryLanguage):
-    language_dir = utils.get_repository_language_serialized_data_path(repository_language)
-
-    for set_ in shared.DATA_SETS + [None]:
-        prepare_corpus_seqs((language_dir, set_))

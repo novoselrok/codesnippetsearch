@@ -1,6 +1,7 @@
 import os
 import itertools
 from typing import Iterable
+from multiprocessing import Pool
 
 from code_search import shared
 
@@ -18,6 +19,20 @@ def flatten(iterable: Iterable[Iterable]) -> Iterable:
 
 def len_generator(generator):
     return sum(1 for _ in generator)
+
+
+def _multiprocess_map_method(args):
+    obj, method_name, arg = args
+    method = getattr(obj, method_name)
+    method(*arg)
+
+
+def map_method(obj, method_name: str, args: Iterable, num_processes=4):
+    if num_processes > 1:
+        with Pool(num_processes) as p:
+            p.map(_multiprocess_map_method, ((obj, method_name, arg) for arg in args))
+    else:
+        map(lambda arg: getattr(obj, method_name)(*arg), args)
 
 
 def get_base_language_serialized_data_path(language: str):

@@ -13,25 +13,16 @@ BUILD_DIR = os.path.join(ROOT_DIR, 'build')
 CODESEARCHNET_DATA_DIR = os.path.join(ROOT_DIR, 'codesearchnet_data')
 BASE_LANGUAGES_DIR = os.path.join(SERIALIZED_DATA_DIR, 'languages')
 
-# TODO: Filenames should be without extensions
-GLOVE_EMBEDDINGS_FILENAME = 'glove_embeddings'
-GLOVE_VOCABULARY_FILENAME = 'glove_vocabulary'
-
+# TODO: Move filenames to a dict
 SERIALIZED_SEQS_FILENAME = 'seqs_{set_}_{type_}'
-
 SERIALIZED_MODEL_FILENAME = 'model'
-
 SERIALIZED_EMBEDDING_WEIGHTS = 'embedding_weights_{type_}'
-
 SERIALIZED_VOCABULARY_FILENAME = 'vocabulary_{type_}'
 SERIALIZED_QUERY_EMBEDDING_WEIGHTS_FILENAME = 'embedding_weights_query'
-
 SERIALIZED_CORPUS_FILENAME = 'corpus_{set_}'
 SERIALIZED_PREPROCESSED_CORPUS_FILENAME = 'preprocessed_corpus_{set_}'
-
 SERIALIZED_CODE_EMBEDDINGS_FILENAME = 'code_embeddings'
-
-SERIALIZED_ANN_FILENAME = 'ann'
+SERIALIZED_ANNOY_INDEX_FILENAME = 'annoy_index'
 
 LANGUAGES_NUM_FILES = {
     'python': 14,
@@ -70,12 +61,16 @@ class DataSet(enum.Enum):
         return self.value
 
 
-# DATA_SETS_SPLIT = [0.8, 0.1, 0.1]
+DATA_SETS_SPLIT_RATIO = {
+    DataSet.TRAIN: 0.8,
+    DataSet.VALID: 0.1,
+    DataSet.TEST: 0.1,
+}
 
 # Model constants
-TRAIN_BATCH_SIZE = 1000
+TRAIN_BATCH_SIZE = 512
 EMBEDDING_SIZE = 128
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.1
 
 FUNC_NAME_AS_QUERY_PCT = 0.1
 MIN_FUNC_NAME_QUERY_LENGTH = 12

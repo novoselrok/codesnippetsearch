@@ -1,7 +1,7 @@
 import os
 
 from code_search import shared, serialize
-from code_search.prepare_base_language_data import DataManager
+from code_search.prepare_data import DataManager
 
 
 def rename_dedupe_definitions_keys(doc):
