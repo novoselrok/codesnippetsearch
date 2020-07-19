@@ -61,23 +61,3 @@
     padding: 8px;
 }
 
-.code-document__ratings {
-    display: flex;
-    align-items: center;
-    padding-top: 8px;
-    justify-content: right;
-}
-
-.code-document__ratings__instruction {
-    font-size: 12px;
-}
-
-.code-document__ratings__rating_number {
-    font-size: 12px;
-    margin-left: 4px;
-    cursor: pointer;
-}
-
-.code-document__ratings__rating_number--active {
-    background-color: var(--primary-color);
-}

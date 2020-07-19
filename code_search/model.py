@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from code_search import shared
+from code_search.data_manager import DataManager
 
 SMALL_NUMBER = 1e-8
 
@@ -13,7 +14,7 @@ class CodeSearchNN(nn.Module):
             self,
             languages: List[str],
             embedding_size: int,
-            code_vocabulary_size: int,
+            code_vocabulary_size: Dict[str, int],
             code_seq_length: int,
             query_vocabulary_size: int,
             query_seq_length: int):
@@ -24,7 +25,7 @@ class CodeSearchNN(nn.Module):
         for language in languages:
             setattr(self, f'{language}_embedding_dropout', nn.Dropout(p=0.1))
             setattr(self, f'{language}_embedding', nn.Embedding(
-                num_embeddings=code_vocabulary_size, embedding_dim=embedding_size, padding_idx=0))
+                num_embeddings=code_vocabulary_size[language], embedding_dim=embedding_size, padding_idx=0))
             setattr(self, f'{language}_weights_layer', nn.Linear(embedding_size, 1, bias=False))
             setattr(self, f'{language}_weights_layer_bn', nn.BatchNorm1d(code_seq_length))
 
@@ -33,16 +34,34 @@ class CodeSearchNN(nn.Module):
             num_embeddings=query_vocabulary_size, embedding_dim=embedding_size, padding_idx=0)
         self.query_weights_layer = nn.Linear(embedding_size, 1, bias=False)
         self.query_weights_layer_bn = nn.BatchNorm1d(query_seq_length)
-        # TODO: optionally load pre-trained embeddings
+
+    def get_query_weights_layer(self):
+        return self.query_weights_layer.weight
+
+    def set_query_weights_layer(self, weight: torch.Tensor):
+        self.query_weights_layer.weight = nn.Parameter(weight)
+
+    def get_language_weights_layer(self, language: str):
+        return getattr(self, f'{language}_weights_layer').weight
+
+    def set_language_weights_layer(self, language: str, weight: torch.Tensor):
+        getattr(self, f'{language}_weights_layer').weight = nn.Parameter(weight)
+
+    def get_query_embedding_weights(self):
+        return self.query_embedding.weight
+
+    def set_query_embedding_weights(self, embedding_weights: torch.Tensor):
+        self.query_embedding.weight = nn.Parameter(embedding_weights)
+
+    def get_language_embedding_weights(self, language: str):
+        return getattr(self, f'{language}_embedding').weight
+
+    def set_language_embedding_weights(self, language: str, embedding_weights: torch.Tensor):
+        getattr(self, f'{language}_embedding').weight = nn.Parameter(embedding_weights)
 
     @staticmethod
     def mask(seqs: torch.Tensor):
         return (seqs != 0).float().unsqueeze(dim=2)
-
-    @staticmethod
-    def mask_aware_mean(embedding: torch.Tensor, mask: torch.Tensor):
-        masked_rows = torch.sum(mask, dim=1)
-        return torch.sum(embedding, dim=1) / (masked_rows + SMALL_NUMBER)
 
     @staticmethod
     def weighted_mean(embedding: torch.Tensor, weights: torch.Tensor):
@@ -85,26 +104,65 @@ class CodeSearchNN(nn.Module):
 def get_model(
         languages: List[str],
         embedding_size: int,
-        code_vocabulary_size: int,
+        code_vocabulary_size: Dict[str, int],
         code_seq_length: int,
         query_vocabulary_size: int,
         query_seq_length: int,
-        device: torch.device):
-    return CodeSearchNN(
+        device: Optional[torch.device] = None):
+    model = CodeSearchNN(
         languages,
         embedding_size,
         code_vocabulary_size,
         code_seq_length,
         query_vocabulary_size,
-        query_seq_length).to(device)
+        query_seq_length)
+
+    if device is not None:
+        model = model.to(device)
+
+    return model
 
 
-def get_base_language_model(device: torch.device):
+def get_base_language_model(device: Optional[torch.device] = None):
     return get_model(
         shared.LANGUAGES,
         shared.EMBEDDING_SIZE,
-        shared.CODE_VOCABULARY_SIZE,
+        {language: shared.CODE_VOCABULARY_SIZE for language in shared.LANGUAGES},
         shared.CODE_MAX_SEQ_LENGTH,
         shared.QUERY_VOCABULARY_SIZE,
         shared.QUERY_MAX_SEQ_LENGTH,
         device)
+
+
+def get_base_language_model_for_evaluation(data_manager: DataManager, device: Optional[torch.device] = None):
+    model = data_manager.get_torch_model(get_base_language_model(device))
+    model.eval()
+    return model
+
+
+def get_repository_model(data_manager: DataManager, languages: List[str], device: Optional[torch.device] = None):
+    query_vocabulary_size = data_manager.get_query_vocabulary().vocab_size
+    code_vocabulary_size = {language: data_manager.get_language_vocabulary(language).vocab_size
+                            for language in languages}
+
+    model = get_model(
+        languages,
+        shared.EMBEDDING_SIZE,
+        code_vocabulary_size,
+        shared.CODE_MAX_SEQ_LENGTH,
+        query_vocabulary_size,
+        shared.QUERY_MAX_SEQ_LENGTH)
+
+    if device is not None:
+        model = model.to(device)
+
+    return model
+
+
+def get_repository_model_for_evaluation(
+        data_manager: DataManager,
+        languages: List[str],
+        device: Optional[torch.device] = None) -> CodeSearchNN:
+    model = data_manager.get_torch_model(get_repository_model(data_manager, languages, device))
+    model.eval()
+    return model

@@ -91,15 +91,19 @@ EXTENSIONS = {
 }
 
 
+def add_extension(format_: str, path: str):
+    return f'{path}.{EXTENSIONS[format_]}'
+
+
 def serialize(obj, format_: str, path: str, **kwargs):
     if format_ not in SERIALIZERS:
         raise Exception(f'{format_} is not a valid serialization format')
 
-    SERIALIZERS[format_](obj, f'{path}.{EXTENSIONS[format_]}', **kwargs)
+    SERIALIZERS[format_](obj, add_extension(format_, path), **kwargs)
 
 
 def load(format_: str, path: str, **kwargs):
     if format_ not in LOADERS:
         raise Exception(f'{format_} is not a valid serialization format')
 
-    return LOADERS[format_](f'{path}.{EXTENSIONS[format_]}', **kwargs)
+    return LOADERS[format_](add_extension(format_, path), **kwargs)

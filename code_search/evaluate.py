@@ -14,9 +14,9 @@ from sklearn.neighbors import NearestNeighbors
 
 from code_search import shared, prepare_data, utils, preprocessing_tokens
 from code_search.code_embedding import get_annoy_index
-from code_search.model import CodeSearchNN, get_base_language_model
+from code_search.model import CodeSearchNN, get_base_language_model_for_evaluation
 from code_search.torch_utils import get_device, np_to_torch, torch_gpu_to_np
-from code_search.data_manager import DataManager
+from code_search.data_manager import DataManager, get_base_languages_data_manager
 
 np.random.seed(0)
 
@@ -50,12 +50,13 @@ def get_language_mrrs(model: CodeSearchNN,
 def evaluate_mrr(model: CodeSearchNN,
                  language_code_seqs: Dict[str, np.ndarray],
                  language_query_seqs: Dict[str, np.ndarray],
-                 device: torch.device):
+                 device: torch.device,
+                 batch_size: int = 1000):
     mrrs_per_language = {}
     for language in language_code_seqs.keys():
         code_seqs = np_to_torch(language_code_seqs[language], device)
         query_seqs = np_to_torch(language_query_seqs[language], device)
-        mrrs_per_language[language] = get_language_mrrs(model, language, code_seqs, query_seqs)
+        mrrs_per_language[language] = get_language_mrrs(model, language, code_seqs, query_seqs, batch_size=batch_size)
 
     mean_mrr = np.mean(list(utils.flatten(mrrs_per_language.values())))
     mean_mrr_per_language = {language: np.mean(values) for language, values in mrrs_per_language.items()}
@@ -132,9 +133,8 @@ def main():
         wandb.init(project=shared.ENV['WANDB_PROJECT_NAME'], config=shared.get_wandb_config())
 
     device = get_device()
-    data_manager = DataManager(shared.BASE_LANGUAGES_DIR)
-    model: CodeSearchNN = data_manager.get_torch_model(get_base_language_model(device))
-    model.eval()
+    data_manager = get_base_languages_data_manager()
+    model = get_base_language_model_for_evaluation(data_manager, device)
 
     emit_ndcg_model_predictions(model, data_manager, device, use_wandb=args['wandb'])
 

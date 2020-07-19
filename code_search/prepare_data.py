@@ -4,23 +4,35 @@ from typing import List, Iterable, Callable
 from collections import Counter
 
 import numpy as np
-from bpevocabulary import BpeVocabulary
+from code_search.bpe_vocabulary import BpeVocabulary, merge_vocabularies
 
-from code_search import shared, utils
-from code_search.data_manager import DataManager
-from code_search.preprocessing_tokens import preprocess_code_tokens, preprocess_query_tokens, remove_inline_comments
+from code_search import shared, utils, torch_utils
+from code_search.model import get_base_language_model, get_base_language_model_for_evaluation
+from code_search.data_manager import DataManager, get_base_languages_data_manager
+from code_search.preprocessing_tokens import preprocess_code_tokens, preprocess_query_tokens, remove_inline_comments, \
+    extract_sub_tokens
+
+
+def get_query_tokens(docstring_tokens: List[str], identifier: str):
+    query_tokens = list(utils.flatten(preprocess_query_tokens(docstring_tokens)))
+    if len(query_tokens) > 0:
+        return query_tokens
+    elif identifier and len(identifier) >= shared.MIN_FUNC_NAME_QUERY_LENGTH:
+        return extract_sub_tokens(identifier)
+
+    return []
 
 
 def preprocess_doc(doc, language: str):
-    identifier = doc['identifier'] if 'identifier' in doc else doc['func_name']
-    query_tokens = doc['docstring_tokens']
+    identifier = doc['identifier']
+    docstring_tokens = doc['docstring_tokens']
     code_tokens = doc['code_tokens']
 
     return {
         # func_name and url are needed for evaluation
         'identifier': identifier,
         'url': doc.get('url'),
-        'query_tokens': list(utils.flatten(preprocess_query_tokens(query_tokens))),
+        'query_tokens': get_query_tokens(docstring_tokens, identifier),
         'code_tokens': list(
             utils.flatten(preprocess_code_tokens(remove_inline_comments(language, code_tokens)))),
     }
@@ -40,6 +52,14 @@ def pad_encode_seqs(
     encoded_seqs = vocabulary.transform(
         (utils.flatten(preprocess_tokens_fn(seq)) for seq in seqs), fixed_length=max_length)
     return np.array(list(encoded_seqs))
+
+
+def pad_encode_query(data_manager: DataManager, query: str, max_query_seq_length: int):
+    return pad_encode_seqs(
+        (seq.split(' ') for seq in [query]),
+        max_query_seq_length,
+        data_manager.get_query_vocabulary(),
+        preprocess_query_tokens)
 
 
 def keep_valid_seqs(padded_encoded_code_seqs: np.ndarray, padded_encoded_query_seqs: np.ndarray):
@@ -142,6 +162,130 @@ class DataPreparer:
             self.data_manager.save_language_seqs(padded_encoded_query_seqs, language, shared.DataType.QUERY, set_)
 
 
+class RepositoryDataPreparer(DataPreparer):
+    def __init__(
+            self,
+            data_manager: DataManager,
+            base_data_manager: DataManager,
+            languages: List[str],
+            seed: int = 0,
+            verbose: bool = True):
+        super().__init__(data_manager, languages, verbose=verbose)
+        self.base_data_manager = base_data_manager
+        self.seed = seed
+
+    @staticmethod
+    def _is_valid_training_doc(doc):
+        return len(get_query_tokens(doc['docstring_tokens'], doc['identifier'])) > 0
+
+    def prepare(self, **kwargs):
+        self.split_corpora_into_sets()
+        self.prepare_corpora()
+        self.prepare_vocabularies(
+            kwargs['code_vocabulary_size'],
+            kwargs['code_pct_bpe'],
+            kwargs['query_vocabulary_size'],
+            kwargs['query_pct_bpe'])
+        self.merge_vocabularies()
+        self.prepare_embedding_weights()
+        self.prepare_seqs(kwargs['code_seq_max_length'], kwargs['query_seq_max_length'])
+
+    @staticmethod
+    def _get_embedding_weights(
+            base_vocabulary: BpeVocabulary,
+            repository_vocabulary: BpeVocabulary,
+            base_embedding_weights: np.ndarray):
+
+        sorted_base_words = utils.get_values_sorted_by_key(base_vocabulary.inverse_word_vocab)
+        word_indices = [base_vocabulary.word_vocab[word] for word in sorted_base_words]
+        mapped_word_indices = [repository_vocabulary.word_vocab[word] for word in sorted_base_words]
+
+        sorted_base_bpes = utils.get_values_sorted_by_key(base_vocabulary.inverse_bpe_vocab)
+        bpe_indices = [base_vocabulary.bpe_vocab[bpe] for bpe in sorted_base_bpes]
+        mapped_bpe_indices = [repository_vocabulary.bpe_vocab[bpe] for bpe in sorted_base_bpes]
+
+        embedding_weights = np.random.normal(size=(repository_vocabulary.vocab_size, base_embedding_weights.shape[1]))
+        embedding_weights[mapped_word_indices, :] = base_embedding_weights[word_indices, :]
+        embedding_weights[mapped_bpe_indices, :] = base_embedding_weights[bpe_indices, :]
+
+        return embedding_weights
+
+    def _get_base_model(self):
+        return get_base_language_model_for_evaluation(self.base_data_manager)
+
+    def split_corpora_into_sets(self):
+        utils.map_method(self,
+                         'split_language_corpus_into_sets',
+                         ((language,) for language in self.languages),
+                         num_processes=self.num_processes)
+
+    def split_language_corpus_into_sets(self, language: str):
+        corpus = lambda: (doc for doc in self.data_manager.get_language_corpus(language, shared.DataSet.ALL)
+                          if RepositoryDataPreparer._is_valid_training_doc(doc))
+
+        split_data_sets = shared.DataSet.split_data_sets()
+        rnd = np.random.RandomState(self.seed)
+        data_set_per_doc = rnd.choice(
+            split_data_sets,
+            utils.len_generator(corpus()),
+            p=[shared.DATA_SETS_SPLIT_RATIO[data_set] for data_set in split_data_sets])
+
+        for set_ in split_data_sets:
+            set_corpus = (doc for doc, doc_set in zip(corpus(), data_set_per_doc) if doc_set == set_)
+            self.data_manager.save_language_corpus(set_corpus, language, set_)
+
+    def merge_vocabularies(self):
+        self.merge_query_vocabularies()
+        utils.map_method(self,
+                         'merge_language_vocabularies',
+                         ((language,) for language in self.languages),
+                         num_processes=self.num_processes)
+
+    def merge_language_vocabularies(self, language: str):
+        base_language_vocabulary = self.base_data_manager.get_language_vocabulary(language)
+        repository_language_vocabulary = self.data_manager.get_language_vocabulary(language)
+        merged_vocabulary = merge_vocabularies(base_language_vocabulary, repository_language_vocabulary)
+        self.data_manager.save_language_vocabulary(merged_vocabulary, language)
+
+    def merge_query_vocabularies(self):
+        base_query_vocabulary = self.base_data_manager.get_query_vocabulary()
+        repository_query_vocabulary = self.data_manager.get_query_vocabulary()
+        merged_vocabulary = merge_vocabularies(base_query_vocabulary, repository_query_vocabulary)
+        self.data_manager.save_query_vocabulary(merged_vocabulary)
+
+    def prepare_embedding_weights(self):
+        self.prepare_query_embedding_weights()
+        utils.map_method(
+            self,
+            'prepare_language_embedding_weights',
+            ((language,) for language in self.languages),
+            num_processes=self.num_processes)
+
+    def prepare_query_embedding_weights(self):
+        base_query_vocabulary = self.base_data_manager.get_query_vocabulary()
+        repository_query_vocabulary = self.data_manager.get_query_vocabulary()
+
+        base_embedding_weights = torch_utils.torch_gpu_to_np(
+            self._get_base_model().get_query_embedding_weights().detach())
+
+        embedding_weights = self._get_embedding_weights(
+            base_query_vocabulary, repository_query_vocabulary, base_embedding_weights)
+
+        self.data_manager.save_query_embedding_weights(embedding_weights)
+
+    def prepare_language_embedding_weights(self, language: str):
+        base_language_vocabulary = self.base_data_manager.get_language_vocabulary(language)
+        repository_language_vocabulary = self.data_manager.get_language_vocabulary(language)
+
+        base_embedding_weights = torch_utils.torch_gpu_to_np(
+            self._get_base_model().get_language_embedding_weights(language).detach())
+
+        embedding_weights = self._get_embedding_weights(
+            base_language_vocabulary, repository_language_vocabulary, base_embedding_weights)
+
+        self.data_manager.save_language_embedding_weights(embedding_weights, language)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Prepare base language data before training the code search model.')
     utils.add_bool_arg(parser, 'prepare-all', default=True)
@@ -150,7 +294,7 @@ def main():
     utils.add_bool_arg(parser, 'prepare-seqs', default=False)
     args = vars(parser.parse_args())
 
-    data_manager = DataManager(shared.BASE_LANGUAGES_DIR)
+    data_manager = get_base_languages_data_manager()
     data_preparer = DataPreparer(data_manager, shared.LANGUAGES, num_processes=4, verbose=True)
 
     if args['prepare-all']:

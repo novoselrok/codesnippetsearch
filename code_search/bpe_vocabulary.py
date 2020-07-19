@@ -9,7 +9,7 @@ import typing
 from typing import Optional, Dict, Iterable, List, Iterator
 from collections import Counter
 
-from code_search import shared
+from code_search import shared, utils
 
 DEFAULT_EOW = '__eow'
 DEFAULT_SOW = '__sow'
@@ -211,3 +211,34 @@ class BpeVocabulary(typing.Sized):
                     raise ValueError("Got index {} that was not in word or BPE vocabs!".format(idx))
 
             yield ' '.join(w for w in words if w != '')
+
+
+def inverse_dict(dict_: Dict[str, int]) -> Dict[int, str]:
+    return {value: key for key, value in dict_.items()}
+
+
+def merge_vocabularies(base_vocabulary: BpeVocabulary, additional_vocabulary: BpeVocabulary) -> BpeVocabulary:
+    sorted_base_words = utils.get_values_sorted_by_key(base_vocabulary.inverse_word_vocab)
+    additional_words = list(
+        set(additional_vocabulary.inverse_word_vocab.values()) - set(sorted_base_words))
+    words = sorted_base_words + additional_words
+
+    sorted_base_bpes = utils.get_values_sorted_by_key(base_vocabulary.inverse_bpe_vocab)
+    additional_bpes = list(
+        set(additional_vocabulary.inverse_bpe_vocab.values()) - set(sorted_base_bpes))
+    bpes = sorted_base_bpes + additional_bpes
+
+    merged_vocab = list(
+        enumerate([(word, True) for word in words] + [(bpe, False) for bpe in bpes]))
+
+    merged_word_vocab = {word: idx for idx, (word, is_word) in merged_vocab if is_word}
+    merged_bpe_vocab = {bpe: idx for idx, (bpe, is_word) in merged_vocab if not is_word}
+
+    base_vocabulary.word_vocab = merged_word_vocab
+    base_vocabulary.bpe_vocab = merged_bpe_vocab
+    base_vocabulary.inverse_word_vocab = inverse_dict(merged_word_vocab)
+    base_vocabulary.inverse_bpe_vocab = inverse_dict(merged_bpe_vocab)
+    base_vocabulary.word_vocab_size = len(merged_word_vocab)
+    base_vocabulary.bpe_vocab_size = len(merged_bpe_vocab)
+    base_vocabulary.vocab_size = base_vocabulary.word_vocab_size + base_vocabulary.bpe_vocab_size
+    return base_vocabulary

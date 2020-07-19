@@ -1,7 +1,7 @@
 import os
 
 from code_search import shared, serialize
-from code_search.prepare_data import DataManager
+from code_search.data_manager import DataManager, get_base_languages_data_manager
 
 
 def rename_dedupe_definitions_keys(doc):
@@ -46,7 +46,7 @@ def parse_dedupe_definitions(data_manager: DataManager, language: str):
 
 
 def main():
-    data_manager = DataManager(shared.BASE_LANGUAGES_DIR)
+    data_manager = get_base_languages_data_manager()
 
     for language in shared.LANGUAGES:
         print(f'Preparing {language}')

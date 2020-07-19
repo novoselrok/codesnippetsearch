@@ -1,6 +1,6 @@
 import os
 import itertools
-from typing import Iterable
+from typing import Iterable, Dict, List
 from multiprocessing import Pool
 
 from code_search import shared
@@ -21,6 +21,10 @@ def len_generator(generator):
     return sum(1 for _ in generator)
 
 
+def get_values_sorted_by_key(dict_: Dict[int, str]) -> List[str]:
+    return [value for _, value in sorted(dict_.items())]
+
+
 def _multiprocess_map_method(args):
     obj, method_name, arg = args
     method = getattr(obj, method_name)
@@ -32,13 +36,13 @@ def map_method(obj, method_name: str, args: Iterable, num_processes=4):
         with Pool(num_processes) as p:
             p.map(_multiprocess_map_method, ((obj, method_name, arg) for arg in args))
     else:
-        map(lambda arg: getattr(obj, method_name)(*arg), args)
-
-
-def get_base_language_serialized_data_path(language: str):
-    return os.path.join(shared.SERIALIZED_DATA_DIR, 'languages', language)
+        list(map(lambda arg: getattr(obj, method_name)(*arg), args))
 
 
 def get_evaluation_queries():
     with open(os.path.join(shared.CODESEARCHNET_DATA_DIR, 'queries.csv'), encoding='utf-8') as f:
         return [line.strip() for line in f.readlines()[1:]]
+
+
+def get_repository_directory(organization: str, name: str):
+    return os.path.join(shared.REPOSITORIES_DIR, organization, name)

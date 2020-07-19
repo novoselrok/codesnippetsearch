@@ -12,13 +12,13 @@ VENDOR_DIR = os.path.join(ROOT_DIR, 'vendor')
 BUILD_DIR = os.path.join(ROOT_DIR, 'build')
 CODESEARCHNET_DATA_DIR = os.path.join(ROOT_DIR, 'codesearchnet_data')
 BASE_LANGUAGES_DIR = os.path.join(SERIALIZED_DATA_DIR, 'languages')
+REPOSITORIES_DIR = os.path.join(SERIALIZED_DATA_DIR, 'repositories')
 
 # TODO: Move filenames to a dict
 SERIALIZED_SEQS_FILENAME = 'seqs_{set_}_{type_}'
 SERIALIZED_MODEL_FILENAME = 'model'
 SERIALIZED_EMBEDDING_WEIGHTS = 'embedding_weights_{type_}'
 SERIALIZED_VOCABULARY_FILENAME = 'vocabulary_{type_}'
-SERIALIZED_QUERY_EMBEDDING_WEIGHTS_FILENAME = 'embedding_weights_query'
 SERIALIZED_CORPUS_FILENAME = 'corpus_{set_}'
 SERIALIZED_PREPROCESSED_CORPUS_FILENAME = 'preprocessed_corpus_{set_}'
 SERIALIZED_CODE_EMBEDDINGS_FILENAME = 'code_embeddings'

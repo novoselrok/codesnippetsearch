@@ -11,8 +11,8 @@ import wandb
 from torch import optim
 
 from code_search import shared, utils
-from code_search.data_manager import DataManager
-from code_search.model import CodeSearchNN, get_base_language_model
+from code_search.data_manager import DataManager, get_base_languages_data_manager
+from code_search.model import CodeSearchNN, get_base_language_model, get_base_language_model_for_evaluation
 from code_search.torch_utils import get_device, np_to_torch
 from code_search.evaluate import evaluate_mrr
 
@@ -115,15 +115,16 @@ def load_language_set_seqs(data_manager: DataManager, languages: List[str], set_
     return language_code_seqs, language_query_seqs
 
 
-def train(model: CodeSearchNN,
-          train_language_seqs: Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]],
-          valid_language_seqs: Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]],
-          data_manager: DataManager,
-          device: torch.device,
-          learning_rate=1e-3,
-          batch_size=1000,
-          max_epochs=100,
-          verbose=True):
+def train_model(model: CodeSearchNN,
+                train_language_seqs: Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]],
+                valid_language_seqs: Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]],
+                data_manager: DataManager,
+                device: torch.device,
+                learning_rate=1e-3,
+                batch_size=1000,
+                max_epochs=100,
+                mrr_eval_batch_size=1000,
+                verbose=True):
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     es = EarlyStopping(model, data_manager, verbose=verbose)
 
@@ -158,7 +159,7 @@ def train(model: CodeSearchNN,
         model.eval()
         with torch.no_grad():
             validation_mean_mrr, validation_mean_mrr_per_language = evaluate_mrr(
-                model, valid_language_code_seqs, valid_language_query_seqs, device)
+                model, valid_language_code_seqs, valid_language_query_seqs, device, batch_size=mrr_eval_batch_size)
 
         if verbose:
             mean_loss_per_batch = np.mean(loss_per_batch)
@@ -171,18 +172,41 @@ def train(model: CodeSearchNN,
             break
 
 
+def train(model: CodeSearchNN, data_manager: DataManager, languages: List[str], device: torch.device, **kwargs):
+    train_language_seqs = load_language_set_seqs(
+        data_manager, languages, shared.DataSet.TRAIN)
+    valid_language_seqs = load_language_set_seqs(
+        data_manager, languages, shared.DataSet.VALID)
+
+    train_model(
+        model,
+        train_language_seqs,
+        valid_language_seqs,
+        data_manager,
+        device,
+        **kwargs)
+
+    test_language_code_seqs, test_language_query_seqs = load_language_set_seqs(
+        data_manager, languages, shared.DataSet.TEST)
+
+    best_model = data_manager.get_torch_model(model)
+    model.eval()
+    with torch.no_grad():
+        test_mean_mrr, test_mean_mrr_per_language = evaluate_mrr(
+            best_model, test_language_code_seqs, test_language_query_seqs, device, batch_size=100)
+
+        if kwargs['verbose']:
+            print(f'Test MRR: {test_mean_mrr:.4f}')
+            print(f'Test MRR: {test_mean_mrr_per_language}')
+
+
 def main():
     parser = argparse.ArgumentParser(description='Train code search model from prepared data.')
     parser.add_argument('--notes', default='')
     utils.add_bool_arg(parser, 'wandb', default=False)
     args = vars(parser.parse_args())
 
-    data_manager = DataManager(shared.BASE_LANGUAGES_DIR)
-    train_language_seqs = load_language_set_seqs(
-        data_manager, shared.LANGUAGES, shared.DataSet.TRAIN)
-    valid_language_seqs = load_language_set_seqs(
-        data_manager, shared.LANGUAGES, shared.DataSet.VALID)
-
+    data_manager = get_base_languages_data_manager()
     device = get_device()
     model = get_base_language_model(device)
 
@@ -192,23 +216,12 @@ def main():
 
     train(
         model,
-        train_language_seqs,
-        valid_language_seqs,
         data_manager,
+        shared.LANGUAGES,
         device,
         learning_rate=shared.LEARNING_RATE,
-        batch_size=shared.TRAIN_BATCH_SIZE)
-
-    test_language_code_seqs, test_language_query_seqs = load_language_set_seqs(
-        data_manager, shared.LANGUAGES, shared.DataSet.TEST)
-
-    best_model = data_manager.get_torch_model(model)
-    best_model.eval()
-    with torch.no_grad():
-        test_mean_mrr, test_mean_mrr_per_language = evaluate_mrr(
-            best_model, test_language_code_seqs, test_language_query_seqs, device)
-        print(f'Test MRR: {test_mean_mrr:.4f}')
-        print(f'Test MRR: {test_mean_mrr_per_language}')
+        batch_size=shared.TRAIN_BATCH_SIZE,
+        verbose=True)
 
 
 if __name__ == '__main__':
