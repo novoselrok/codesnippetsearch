@@ -12,7 +12,7 @@ from torch import optim
 
 from code_search import shared, utils
 from code_search.data_manager import DataManager, get_base_languages_data_manager
-from code_search.model import CodeSearchNN, get_base_language_model, get_base_language_model_for_evaluation
+from code_search.model import CodeSearchNN, get_base_language_model
 from code_search.torch_utils import get_device, np_to_torch
 from code_search.evaluate import evaluate_mrr
 
@@ -193,7 +193,11 @@ def train(model: CodeSearchNN, data_manager: DataManager, languages: List[str], 
     model.eval()
     with torch.no_grad():
         test_mean_mrr, test_mean_mrr_per_language = evaluate_mrr(
-            best_model, test_language_code_seqs, test_language_query_seqs, device, batch_size=100)
+            best_model,
+            test_language_code_seqs,
+            test_language_query_seqs,
+            device,
+            batch_size=kwargs.get('mrr_eval_batch_size', 1000))
 
         if kwargs['verbose']:
             print(f'Test MRR: {test_mean_mrr:.4f}')

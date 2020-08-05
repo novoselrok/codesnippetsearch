@@ -1,6 +1,7 @@
 import hashlib
 import operator
 import re
+import os
 from typing import List, Tuple, Any, Dict
 
 from django.http import HttpResponseBadRequest, JsonResponse
@@ -34,13 +35,16 @@ def code_repository_as_json(code_repository: models.CodeRepository) -> Dict[str,
         'id': code_repository.id,
         'organization': code_repository.organization,
         'name': code_repository.name,
-        'commitHash': code_repository.commit_hash
+        'commitHash': code_repository.commit_hash,
+        'description': code_repository.description,
+        'languages': [language.name for language in code_repository.languages.all()]
     }
 
 
 def code_document_as_json(code_document: models.CodeDocument) -> Dict[str, Any]:
     return {
-        'path': code_document.path,
+        'filename': os.path.basename(code_document.path),
+        'url': code_document.url,
         'codeHtml': syntax_highlight(code_document),
         'codeHash': code_document.code_hash,
         'language': code_document.language.name
@@ -124,8 +128,7 @@ def api_repository_search_view(request, repository_organization, repository_name
     else:
         languages = repository_languages
 
-    query_hash = hashlib.sha1(query.encode('utf-8')).hexdigest()
-    cache_key = f'query:{query_hash}'
+    cache_key = hashlib.sha1(f'query:{repository_organization}:{repository_name}:{query}'.encode('utf-8')).hexdigest()
     if cache_key in cache:
         nearest_neighbors_per_language = cache.get(cache_key)
     else:

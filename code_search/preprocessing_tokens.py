@@ -40,8 +40,11 @@ def extract_sub_tokens(token):
     return [token.strip() for token in utils.flatten(sub_tokens) if len(token.strip()) > 0]
 
 
-def preprocess_code_tokens(tokens: Iterable[str]) -> shared.TokensGenerator:
+def preprocess_code_tokens(language: str, tokens: Iterable[str]) -> shared.TokensGenerator:
     for token in tokens:
+        if is_comment_token(language, token):
+            continue
+
         token_lower = token.lower().strip()
 
         yield [token_lower]

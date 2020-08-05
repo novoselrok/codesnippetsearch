@@ -1,7 +1,9 @@
 import argparse
 import gc
+import json
 import os
 import random
+from collections import defaultdict
 from typing import List, Dict
 
 import torch
@@ -13,7 +15,7 @@ from scipy.spatial.distance import cdist
 from sklearn.neighbors import NearestNeighbors
 
 from code_search import shared, prepare_data, utils, preprocessing_tokens
-from code_search.code_embedding import get_annoy_index
+from code_search.code_embedding import get_annoy_index, build_code_embeddings
 from code_search.model import CodeSearchNN, get_base_language_model_for_evaluation
 from code_search.torch_utils import get_device, np_to_torch, torch_gpu_to_np
 from code_search.data_manager import DataManager, get_base_languages_data_manager
@@ -63,15 +65,38 @@ def evaluate_mrr(model: CodeSearchNN,
     return mean_mrr, mean_mrr_per_language
 
 
-def emit_ndcg_model_predictions(
+def ndcg(predictions: Dict[str, List[str]], relevance_scores: Dict[str, Dict[str, float]]) -> float:
+    num_results = 0
+    ndcg_sum = 0
+
+    for query, query_relevance_annotations in relevance_scores.items():
+        current_rank = 1
+        query_dcg = 0
+        for url in predictions[query]:
+            if url in query_relevance_annotations:
+                query_dcg += (2**query_relevance_annotations[url] - 1) / np.log2(current_rank + 1)
+            current_rank += 1
+
+        query_idcg = 0
+        for i, ideal_relevance in enumerate(sorted(query_relevance_annotations.values(), reverse=True), start=1):
+            query_idcg += (2 ** ideal_relevance - 1) / np.log2(i + 1)
+        if query_idcg == 0:
+            # We have no positive annotations for the given query, so we should probably not penalize anyone about this.
+            continue
+        num_results += 1
+        ndcg_sum += query_dcg / query_idcg
+
+    return ndcg_sum / num_results
+
+
+def get_ndcg_predictions(
+        queries,
         model: CodeSearchNN,
         data_manager: DataManager,
         device: torch.device,
         nn_lib: str = 'scikit',
         n_neighbors: int = 150,
-        search_k: int = -1,
-        use_wandb=False):
-    queries = utils.get_evaluation_queries()
+        search_k: int = -1):
     predictions = []
     for language in shared.LANGUAGES:
         print(f'Evaluating {language}')
@@ -119,9 +144,33 @@ def emit_ndcg_model_predictions(
         del evaluation_docs
         gc.collect()
 
-    df_predictions = pd.DataFrame(predictions, columns=['query', 'language', 'identifier', 'url'])
-    save_path = os.path.join(wandb.run.dir, 'model_predictions.csv') if use_wandb else '../model_predictions.csv'
-    df_predictions.to_csv(save_path, index=False)
+    return predictions
+
+
+def evaluate_ndcg(model: CodeSearchNN, data_manager: DataManager, languages: List[str], device: torch.device):
+    build_code_embeddings(model, data_manager, languages, device)
+    validation_queries = [
+        'sort string list'
+    ]
+    relevance_scores = json.load(open(os.path.join(shared.ROOT_DIR, 'relevance_annotations.json')))
+    ndcg_predictions = get_ndcg_predictions(validation_queries, model, data_manager, device)
+    language_ndcg = []
+    for language in languages:
+        language_predictions_per_query = defaultdict(list)
+        for prediction in ndcg_predictions:
+            if prediction['language'] == language:
+                language_predictions_per_query[prediction['query']].append(prediction['url'])
+
+        score = ndcg(language_predictions_per_query, relevance_scores[language])
+        print(f'{language} NDCG: {score}')
+        language_ndcg.append(score)
+
+    print(f'Mean NDCG: {np.mean(language_ndcg)}')
+
+
+def get_evaluation_queries():
+    with open(os.path.join(shared.CODESEARCHNET_DATA_DIR, 'queries.csv'), encoding='utf-8') as f:
+        return [line.strip() for line in f.readlines()[1:]]
 
 
 def main():
@@ -135,8 +184,13 @@ def main():
     device = get_device()
     data_manager = get_base_languages_data_manager()
     model = get_base_language_model_for_evaluation(data_manager, device)
+    queries = get_evaluation_queries()
 
-    emit_ndcg_model_predictions(model, data_manager, device, use_wandb=args['wandb'])
+    ndcg_predictions = get_ndcg_predictions(queries, model, data_manager, device)
+
+    df_predictions = pd.DataFrame(ndcg_predictions, columns=['query', 'language', 'identifier', 'url'])
+    save_path = os.path.join(wandb.run.dir, 'model_predictions.csv') if args['wandb'] else '../model_predictions.csv'
+    df_predictions.to_csv(save_path, index=False)
 
 
 if __name__ == '__main__':

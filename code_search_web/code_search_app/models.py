@@ -17,6 +17,7 @@ class CodeRepository(models.Model):
 
     organization = models.CharField(max_length=256)
     name = models.CharField(max_length=256)
+    description = models.TextField(blank=True, null=True)
     commit_hash = models.CharField(max_length=256, null=True, blank=True)
     update_status = models.IntegerField(choices=[
         (UPDATE_IN_PROGRESS, 'In Progress'),

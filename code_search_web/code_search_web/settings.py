@@ -25,12 +25,15 @@ INSTALLED_APPS = [
 
     'django.contrib.humanize',
 
+    'corsheaders',
+
     'code_search_app.apps.CodeSearchAppConfig',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -115,3 +118,9 @@ if not DEBUG and len(ENV['SENTRY_DSN']) > 0:
         dsn=ENV['SENTRY_DSN'],
         integrations=[DjangoIntegration()]
     )
+
+CORS_ORIGIN_ALLOW_ALL = True
+CORS_ALLOW_METHODS = (
+    'GET',
+    'OPTIONS'
+)

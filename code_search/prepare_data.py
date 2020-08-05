@@ -1,16 +1,16 @@
 import argparse
+import functools
 import itertools
-from typing import List, Iterable, Callable
+from typing import List, Iterable
 from collections import Counter
 
 import numpy as np
 from code_search.bpe_vocabulary import BpeVocabulary, merge_vocabularies
 
 from code_search import shared, utils, torch_utils
-from code_search.model import get_base_language_model, get_base_language_model_for_evaluation
+from code_search.model import get_base_language_model_for_evaluation
 from code_search.data_manager import DataManager, get_base_languages_data_manager
-from code_search.preprocessing_tokens import preprocess_code_tokens, preprocess_query_tokens, remove_inline_comments, \
-    extract_sub_tokens
+from code_search.preprocessing_tokens import preprocess_code_tokens, preprocess_query_tokens, extract_sub_tokens
 
 
 def get_query_tokens(docstring_tokens: List[str], identifier: str):
@@ -33,8 +33,7 @@ def preprocess_doc(doc, language: str):
         'identifier': identifier,
         'url': doc.get('url'),
         'query_tokens': get_query_tokens(docstring_tokens, identifier),
-        'code_tokens': list(
-            utils.flatten(preprocess_code_tokens(remove_inline_comments(language, code_tokens)))),
+        'code_tokens': list(utils.flatten(preprocess_code_tokens(language, code_tokens))),
     }
 
 
@@ -48,7 +47,7 @@ def pad_encode_seqs(
         seqs: shared.TokensGenerator,
         max_length: int,
         vocabulary: BpeVocabulary,
-        preprocess_tokens_fn: Callable[[Iterable[str]], shared.TokensGenerator]) -> np.ndarray:
+        preprocess_tokens_fn) -> np.ndarray:
     encoded_seqs = vocabulary.transform(
         (utils.flatten(preprocess_tokens_fn(seq)) for seq in seqs), fixed_length=max_length)
     return np.array(list(encoded_seqs))
@@ -142,8 +141,9 @@ class DataPreparer:
         language_vocabulary = self.data_manager.get_language_vocabulary(language)
 
         code_seqs = (doc['code_tokens'] for doc in corpus_fn())
+        preprocess_language_code_tokens = functools.partial(preprocess_code_tokens, language)
         padded_encoded_code_seqs = pad_encode_seqs(
-            code_seqs, code_seq_max_length, language_vocabulary, preprocess_code_tokens)
+            code_seqs, code_seq_max_length, language_vocabulary, preprocess_language_code_tokens)
 
         if set_ == shared.DataSet.ALL:
             # We do not have to prepare query seqs for entire corpus

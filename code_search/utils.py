@@ -39,10 +39,5 @@ def map_method(obj, method_name: str, args: Iterable, num_processes=4):
         list(map(lambda arg: getattr(obj, method_name)(*arg), args))
 
 
-def get_evaluation_queries():
-    with open(os.path.join(shared.CODESEARCHNET_DATA_DIR, 'queries.csv'), encoding='utf-8') as f:
-        return [line.strip() for line in f.readlines()[1:]]
-
-
 def get_repository_directory(organization: str, name: str):
     return os.path.join(shared.REPOSITORIES_DIR, organization, name)

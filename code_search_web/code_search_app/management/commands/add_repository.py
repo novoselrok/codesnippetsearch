@@ -8,9 +8,11 @@ class Command(BaseCommand):
         parser.add_argument('organization', type=str)
         parser.add_argument('name', type=str)
         parser.add_argument('languages', type=str)
+        parser.add_argument('description', type=str)
 
     def handle(self, *args, **options):
-        repository = models.CodeRepository.objects.create(organization=options['organization'], name=options['name'])
+        repository = models.CodeRepository.objects.create(
+            organization=options['organization'], name=options['name'], description=options['description'])
         languages = options['languages'].split(',')
 
         for language in languages:

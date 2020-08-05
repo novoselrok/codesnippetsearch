@@ -1,12 +1,15 @@
+import sys
 from typing import List, Dict, Tuple
 
 import torch
 
+from code_search import shared
+from code_search.data_manager import get_base_languages_data_manager
 from code_search.code_embedding import get_annoy_index
 from code_search.data_manager import DataManager
-from code_search.model import CodeSearchNN
+from code_search.model import CodeSearchNN, get_base_language_model_for_evaluation
 from code_search.prepare_data import pad_encode_query
-from code_search.torch_utils import torch_gpu_to_np, np_to_torch
+from code_search.torch_utils import torch_gpu_to_np, np_to_torch, get_device
 
 
 def get_nearest_query_neighbors_per_language(
@@ -41,3 +44,27 @@ def get_nearest_code_neighbors(
     indices, distances = ann.get_nns_by_item(
         embedding_row_index, n_results + 1, include_distances=True)
     return indices[1:], distances[1:]  # Exclude the first result since it belongs to the embedding row
+
+
+def main():
+    data_manager = get_base_languages_data_manager()
+    device = get_device()
+    model = get_base_language_model_for_evaluation(data_manager, device)
+
+    query = sys.argv[1]
+    nearest_neighbors_per_language = get_nearest_query_neighbors_per_language(
+        model, data_manager, shared.LANGUAGES, query, shared.QUERY_MAX_SEQ_LENGTH, device, results_per_language=30)
+
+    for language, nearest_neighbors in nearest_neighbors_per_language.items():
+        print(language)
+        evaluation_docs = [{'url': doc['url'], 'identifier': doc['identifier'], 'code': doc['code']}
+                           for doc in data_manager.get_language_corpus(language, shared.DataSet.ALL)]
+
+        for idx in nearest_neighbors[0]:
+            print(evaluation_docs[idx]['identifier'], evaluation_docs[idx]['url'])
+            print(evaluation_docs[idx]['code'])
+            print('=' * 20)
+
+
+if __name__ == '__main__':
+    main()

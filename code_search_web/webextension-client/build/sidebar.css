@@ -1,0 +1,11 @@
+.codesnippetsearch-sidebar {
+    position: fixed;
+    display: none;
+    top: 0;
+    right: 0;
+    width: 500px;
+    height: 100vh;
+    background-color: white;
+    padding: 16px;
+    border-left: 1px solid rgba(0, 0, 0, 0.15);
+}

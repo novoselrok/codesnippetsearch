@@ -4,7 +4,7 @@ from typing import List
 
 import torch
 
-from code_search import shared, torch_utils
+from code_search import shared, utils, torch_utils
 from code_search.code_embedding import build_code_embeddings, build_annoy_indices
 from code_search.model import get_base_language_model_for_evaluation, get_repository_model, \
     get_repository_model_for_evaluation
@@ -16,6 +16,9 @@ from code_search.function_parser.extract import extract
 from code_search_app.management.commands._utils import download_repository, get_tmp_repository_dir_path, \
     get_repository_commit_hash
 from code_search_app import models
+
+VALID_SET_SIZE = 50
+MIN_SAMPLES_EXTRACTED = 600
 
 
 def get_code_document_url(organization: str, name: str, commit_hash: str, path: str, start_line: int, end_line: int):
@@ -81,31 +84,11 @@ def train_repository_model(data_manager: DataManager, languages: List[str], devi
         device,
         learning_rate=shared.LEARNING_RATE,
         batch_size=shared.TRAIN_BATCH_SIZE,
-        mrr_eval_batch_size=100,
+        mrr_eval_batch_size=VALID_SET_SIZE,
         verbose=True)
 
 
-def update_repository(repository: models.CodeRepository):
-    repository.update_status = models.CodeRepository.UPDATE_IN_PROGRESS
-    repository.save()
-    models.CodeDocument.objects.filter(repository=repository).delete()
-
-    organization, name = repository.organization, repository.name
-    languages = [language.name for language in repository.languages.all()]
-
-    repository_dir = get_tmp_repository_dir_path(tempfile.TemporaryDirectory(), organization, name)
-    download_repository(organization, name, repository_dir)
-    repository_commit_hash = get_repository_commit_hash(repository_dir)
-
-    print(f'Repository {organization}/{name} downloaded...')
-
-    repository_data_manager = get_repository_data_manager(organization, name)
-    base_data_manager = get_base_languages_data_manager()
-    for language in languages:
-        print(f'Extracting corpus for {organization}/{name} {language}...')
-        extract_repository_language_corpus(repository_data_manager, repository_dir, language)
-
-    # TODO: Check if train corpus size is enough
+def prepare_repository(repository_data_manager: DataManager, base_data_manager: DataManager, languages: List[str]):
     data_preparer = RepositoryDataPreparer(repository_data_manager, base_data_manager, languages, verbose=True)
     data_preparer.prepare(
         code_vocabulary_size=shared.CODE_VOCABULARY_SIZE,
@@ -123,6 +106,34 @@ def update_repository(repository: models.CodeRepository):
     build_code_embeddings(model, repository_data_manager, languages, device)
     build_annoy_indices(repository_data_manager, languages, n_trees=600)
 
+
+def update_repository(repository: models.CodeRepository):
+    repository.update_status = models.CodeRepository.UPDATE_IN_PROGRESS
+    repository.save()
+    models.CodeDocument.objects.filter(repository=repository).delete()
+
+    organization, name = repository.organization, repository.name
+    languages = [language.name for language in repository.languages.all()]
+
+    repository_dir = get_tmp_repository_dir_path(tempfile.TemporaryDirectory(), organization, name)
+    download_repository(organization, name, repository_dir)
+    print(f'Repository {organization}/{name} downloaded...')
+
+    repository_data_manager = get_repository_data_manager(organization, name)
+    base_data_manager = get_base_languages_data_manager()
+    for language in languages:
+        print(f'Extracting corpus for {organization}/{name} {language}...')
+        extract_repository_language_corpus(repository_data_manager, repository_dir, language)
+        n_samples = utils.len_generator(
+            repository_data_manager.get_language_corpus(language, shared.DataSet.ALL))
+        if n_samples < MIN_SAMPLES_EXTRACTED:
+            raise Exception(
+                f'Not enough validation samples extracted ({n_samples}) '
+                f'for {organization}/{name} {language}.')
+
+    prepare_repository(repository_data_manager, base_data_manager, languages)
+
+    repository_commit_hash = get_repository_commit_hash(repository_dir)
     for language in languages:
         import_corpus(repository_data_manager, repository, language, repository_commit_hash)
 
@@ -133,5 +144,13 @@ def update_repository(repository: models.CodeRepository):
 
 def update_repositories(repositories: List[models.CodeRepository]):
     for repository in repositories:
+        if repository.update_status == models.CodeRepository.UPDATE_ERROR:
+            continue
+
         print(f'Preparing {repository}')
-        update_repository(repository)
+        try:
+            update_repository(repository)
+        except Exception as e:
+            print(e)
+            repository.update_status = models.CodeRepository.UPDATE_ERROR
+            repository.save()
