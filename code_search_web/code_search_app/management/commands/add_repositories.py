@@ -14,7 +14,10 @@ class Command(BaseCommand):
             reader = csv.DictReader(f)
             for row in reader:
                 repository = models.CodeRepository.objects.create(
-                    organization=row['organization'], name=row['name'], description=row['description'])
+                    organization=row['organization'],
+                    name=row['name'],
+                    description=row['description'],
+                    commit_hash=row['commit_hash'])
                 languages = row['languages'].split('|')
 
                 for language in languages:
