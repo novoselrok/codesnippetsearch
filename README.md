@@ -1,6 +1,6 @@
 # CodeSnippetSearch
 
-Neural bag of words code search implementation using Keras and data from the [CodeSearchNet](https://github.com/github/CodeSearchNet) project.
+Neural bag of words code search implementation using PyTorch and data from the [CodeSearchNet](https://github.com/github/CodeSearchNet) project.
 The model training code was heavily inspired by the baseline (Tensorflow) implementation in the CodeSearchNet repository. 
 Currently, Python, Java, Go, Php, Javascript, and Ruby programming languages are supported.
 
@@ -17,6 +17,7 @@ Finally, cosine similarity is calculated between the code vectors and the query 
 (the loss function is documented in code_search/train_model.py#cosine_loss).
 Further details can be found on the [WANDB run](https://app.wandb.ai/roknovosel/glorified-code-search/runs/21hzzq1h/overview).
 
+# TODO: Documentation is not up to date. It will be rewritten to reflect added repository support
 ## Model structure
 
 ![Model structure](assets/model.png)
@@ -85,6 +86,4 @@ Run `$ python search.py "read file lines"` and it will output 3 best ranked resu
 - Create cache table: `$ python manage.py createcachetable`
 - Import code documents `$ python manage.py import_code_documents`
 - Build code embeddings and approximate neighbor search using Annoy (run from the `code_search` directory): `$ python build_code_embeddings.py && python build_anns.py`
-- Running the dev server: `$ python manage.py runserver 0.0.0.0:8000 --nothreading --noreload`
-
-`--nothreading --noreload` is required because Keras does not play well with the threaded version of the Django runserver.
+- Running the dev server: `$ python manage.py runserver 0.0.0.0:8000`
