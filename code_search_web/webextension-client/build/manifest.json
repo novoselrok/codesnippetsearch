@@ -16,7 +16,8 @@
   ],
   "permissions": [
     "webRequest",
-    "contextMenus"
+    "contextMenus",
+    "http://0.0.0.0/*"
   ],
   "background": {
     "scripts": [

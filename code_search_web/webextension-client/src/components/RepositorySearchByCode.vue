@@ -46,7 +46,7 @@
 
 <script>
 import CodeDocument from './CodeDocument'
-import { fetchEndpoint } from '../common'
+import { postEndpoint } from '../common'
 
 export default {
     components: {
@@ -75,7 +75,7 @@ export default {
             }
 
             this.isLoadingSearchResults = true
-            fetchEndpoint(`/api/repositories/${this.repository.organization}/${this.repository.name}/searchByCode?code=${this.code}&language=${this.language}`)
+            postEndpoint(`/api/repositories/${this.repository.organization}/${this.repository.name}/searchByCode`, { code: this.code, language: this.language })
                 .then(response => {
                     this.codeDocuments = response.codeDocuments
                     this.isLoadingSearchResults = false

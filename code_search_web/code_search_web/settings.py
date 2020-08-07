@@ -119,8 +119,12 @@ if not DEBUG and len(ENV['SENTRY_DSN']) > 0:
         integrations=[DjangoIntegration()]
     )
 
-CORS_ORIGIN_ALLOW_ALL = True
+CORS_ORIGIN_REGEX_WHITELIST = [
+    r'^https://\w+\.github\.com$',
+    r'^https://\w+\.codesnippetsearch\.net$',
+] + ENV['CORS_ORIGIN_REGEX_WHITELIST']
 CORS_ALLOW_METHODS = (
     'GET',
-    'OPTIONS'
+    'OPTIONS',
+    'POST'
 )

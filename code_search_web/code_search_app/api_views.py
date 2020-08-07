@@ -1,4 +1,5 @@
 import hashlib
+import json
 import operator
 import re
 import os
@@ -7,6 +8,7 @@ from typing import List, Tuple, Any, Dict
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
+from django.views.decorators.csrf import csrf_exempt
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name
 
@@ -94,13 +96,16 @@ def api_repositories_view(request):
     if request.method != 'GET':
         return HttpResponseBadRequest('Invalid HTTP method.')
 
-    code_repositories = models.CodeRepository.objects.all()
+    code_repositories = models.CodeRepository.objects.filter(update_status=models.CodeRepository.UPDATE_FINISHED)
     return JsonResponse({
         'codeRepositories': [code_repository_as_json(code_repository) for code_repository in code_repositories]})
 
 
 def api_repository_view(request, repository_organization, repository_name):
     repository = get_object_or_404(models.CodeRepository, organization=repository_organization, name=repository_name)
+    if repository.update_status != models.CodeRepository.UPDATE_FINISHED:
+        return HttpResponseBadRequest('Repository update is not finished.')
+
     return JsonResponse(code_repository_as_json(repository))
 
 
@@ -156,18 +161,20 @@ def api_repository_search_view(request, repository_organization, repository_name
     return JsonResponse({'codeDocuments': code_documents_with_distances_as_json(code_documents_with_distances)})
 
 
+@csrf_exempt
 def api_repository_search_by_code_view(request, repository_organization, repository_name):
-    if request.method != 'GET':
+    if request.method != 'POST':
         return HttpResponseBadRequest('Invalid HTTP method.')
 
-    code = request.GET.get('code')
+    body = json.loads(request.body)
+    code = body.get('code')
     if not code or len(code.strip()) == 0:
         return HttpResponseBadRequest('Invalid or missing code.')
 
     if len(code) > 4096:
         return HttpResponseBadRequest('Code too long.')
 
-    language = request.GET.get('language')
+    language = body.get('language')
     repository = get_object_or_404(models.CodeRepository, organization=repository_organization, name=repository_name)
     repository_languages = [language.name for language in repository.languages.all()]
 
