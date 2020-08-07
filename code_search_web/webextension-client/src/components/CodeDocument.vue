@@ -6,6 +6,7 @@
             </div>
             <div class="code-document__header__rating">
                 <template v-if="distance">Match rating: {{ rating }}% &middot; </template>
+                <a :href="`https://codesnippetsearch.net/${repositoryOrganization}/${repositoryName}/${codeHash}`">Similar code snippets</a>
             </div>
         </div>
         <div class="code-document__code" v-html="codeHtml">

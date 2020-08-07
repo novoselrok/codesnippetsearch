@@ -12,6 +12,8 @@ urlpatterns = [
     path('api/repositories/<str:repository_organization>/<str:repository_name>', api_views.api_repository_view),
     path('api/repositories/<str:repository_organization>/<str:repository_name>/search',
          api_views.api_repository_search_view),
+    path('api/repositories/<str:repository_organization>/<str:repository_name>/searchByCode',
+         api_views.api_repository_search_by_code_view),
 
     path('api/codeDocument/<str:repository_organization>/<str:repository_name>/<str:code_hash>',
          api_views.api_code_document_view),

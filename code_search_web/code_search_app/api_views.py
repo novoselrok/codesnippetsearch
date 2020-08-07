@@ -15,7 +15,8 @@ from code_search_app.shared import get_pygments_html_formatter
 
 from code_search import shared
 from code_search.torch_utils import get_device
-from code_search.search import get_nearest_query_neighbors_per_language, get_nearest_code_neighbors
+from code_search.search import get_nearest_embedding_neighbors_per_language, get_nearest_code_neighbors,\
+    get_code_embedding, get_query_embedding
 from code_search.data_manager import get_repository_data_manager
 from code_search.model import get_repository_model_for_evaluation
 
@@ -135,13 +136,12 @@ def api_repository_search_view(request, repository_organization, repository_name
         data_manager = get_repository_data_manager(repository.organization, repository.name)
         device = get_device()
         model = get_repository_model_for_evaluation(data_manager, languages, device)
-        nearest_neighbors_per_language = get_nearest_query_neighbors_per_language(
-            model,
+        query_embedding = get_query_embedding(
+            model, data_manager, get_filterless_query(query), shared.QUERY_MAX_SEQ_LENGTH, device)
+        nearest_neighbors_per_language = get_nearest_embedding_neighbors_per_language(
             data_manager,
             languages,
-            get_filterless_query(query),
-            shared.QUERY_MAX_SEQ_LENGTH,
-            get_device(),
+            query_embedding,
             results_per_language=RESULTS_PER_LANGUAGE)
         cache.set(cache_key, nearest_neighbors_per_language, timeout=None)  # Never expire
 
@@ -153,6 +153,43 @@ def api_repository_search_view(request, repository_organization, repository_name
             sort_code_documents_with_distances_by_index(code_documents, indices, distances))
 
     code_documents_with_distances = sort_code_documents_by_distance(code_documents_with_distances)
+    return JsonResponse({'codeDocuments': code_documents_with_distances_as_json(code_documents_with_distances)})
+
+
+def api_repository_search_by_code_view(request, repository_organization, repository_name):
+    if request.method != 'GET':
+        return HttpResponseBadRequest('Invalid HTTP method.')
+
+    code = request.GET.get('code')
+    if not code or len(code.strip()) == 0:
+        return HttpResponseBadRequest('Invalid or missing code.')
+
+    if len(code) > 4096:
+        return HttpResponseBadRequest('Code too long.')
+
+    language = request.GET.get('language')
+    repository = get_object_or_404(models.CodeRepository, organization=repository_organization, name=repository_name)
+    repository_languages = [language.name for language in repository.languages.all()]
+
+    if language not in repository_languages:
+        return HttpResponseBadRequest(f'{language} is not a valid repository language.')
+
+    data_manager = get_repository_data_manager(repository.organization, repository.name)
+    device = get_device()
+    model = get_repository_model_for_evaluation(data_manager, repository_languages, device)
+    code_embedding = get_code_embedding(
+        model, data_manager, code, language, shared.CODE_MAX_SEQ_LENGTH, device)
+
+    indices, distances = get_nearest_embedding_neighbors_per_language(
+        data_manager,
+        [language],
+        code_embedding,
+        results_per_language=RESULTS_PER_LANGUAGE)[language]
+
+    code_documents = get_code_documents_from_indices(repository, language, indices)
+    code_documents_with_distances = sort_code_documents_by_distance(
+        sort_code_documents_with_distances_by_index(code_documents, indices, distances))
+
     return JsonResponse({'codeDocuments': code_documents_with_distances_as_json(code_documents_with_distances)})
 
 
@@ -180,7 +217,8 @@ def api_similar_code_documents_view(request, repository_organization, repository
         code_hash=code_hash)
     language = code_document.language.name
 
-    cache_key = f'similar_code_documents:{code_hash}'
+    cache_key = hashlib.sha1(
+        f'similar_code_documents:{repository_organization}:{repository_name}:{code_hash}'.encode('utf-8')).hexdigest()
     if cache_key in cache:
         indices, distances = cache.get(cache_key)
     else:

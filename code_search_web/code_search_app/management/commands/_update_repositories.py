@@ -26,7 +26,16 @@ def get_code_document_url(organization: str, name: str, commit_hash: str, path: 
 
 
 def extract_repository_language_corpus(data_manager: DataManager, repository_dir: str, language: str):
-    data_manager.save_language_corpus(extract(repository_dir, language), language, shared.DataSet.ALL)
+    code = set()
+    code_documents = []
+    for code_document in extract(repository_dir, language):
+        if code_document['code'] in code:
+            continue
+
+        code_documents.append(code_document)
+        code.add(code_document['code'])
+
+    data_manager.save_language_corpus(code_documents, language, shared.DataSet.ALL)
 
 
 def import_corpus(

@@ -6,8 +6,6 @@ from code_search.function_parser.parsers.comment_utils import get_docstring_summ
 
 
 class JavascriptParser(LanguageParser):
-
-    FILTER_PATHS = ('vendor', 'test', 'node_modules', '.min')
     BLACKLISTED_FUNCTION_NAMES = {'toString', 'toLocaleString', 'valueOf'}
 
     @staticmethod

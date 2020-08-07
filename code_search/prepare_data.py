@@ -61,6 +61,15 @@ def pad_encode_query(data_manager: DataManager, query: str, max_query_seq_length
         preprocess_query_tokens)
 
 
+def pad_encode_code_tokens(data_manager: DataManager, tokens: List[str], language: str, max_code_seq_length: int):
+    return pad_encode_seqs(
+        (_ for _ in [tokens]),
+        max_code_seq_length,
+        data_manager.get_language_vocabulary(language),
+        functools.partial(preprocess_code_tokens, language)
+    )
+
+
 def keep_valid_seqs(padded_encoded_code_seqs: np.ndarray, padded_encoded_query_seqs: np.ndarray):
     # Keep seqs with at least one valid token
     valid_code_seqs = padded_encoded_code_seqs.astype(bool).sum(axis=1) > 0

@@ -1,17 +1,23 @@
 <template>
-    <div class="repository-search">
-        <div class="repository-search__search-bar">
-            <input
-                placeholder="Enter your query"
-                class="repository-search__search-bar__input"
-                type="text"
-                @keydown.enter="onSearch"
-                v-model="query">
-            <div class="repository-search__search-bar__button" @click="onSearch"><div>Search</div></div>
+    <div class="repository-search-by-code">
+        <div class="repository-search-by-code__code">
+            <textarea
+                placeholder="Enter the code"
+                class="repository-search-by-code__code__textarea"
+                v-model="code"></textarea>
+            <div class="repository-search-by-code__code__bottom">
+                <div class="repository-search-by-code__code__bottom__languages">
+                    <select v-model="language">
+                      <option disabled value="">Select a language</option>
+                      <option v-for="language in repository.languages" :key="language" :value="language">{{ language|capitalize }}</option>
+                    </select>
+                </div>
+                <div class="repository-search-by-code__code__bottom__button" @click="onSearch"><div>Search</div></div>
+            </div>
         </div>
         <div
             v-if="!isLoadingSearchResults"
-            class="repository-search__code-documents">
+            class="repository-search-by-code__code-documents">
             <code-document
                 v-for="codeDocument in codeDocuments"
                 :key="codeDocument.codeHash"
@@ -26,7 +32,7 @@
             />
         </div>
         <div v-else>
-            <div class="repository-search__placeholder">
+            <div class="repository-search-by-code__placeholder">
                 <svg viewBox="0 0 703 401" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path fill="#E1E1E1" d="M2 0h701v88H2z"/>
                     <path fill="#E0E0E0"
@@ -47,14 +53,16 @@ export default {
         CodeDocument,
     },
     props: {
-        repository: { type: Object, required: true }
+        repository: { type: Object, required: true },
+        contextMenuSearchByCode: { type: Object, required: false }
     },
     data () {
         return {
             isLoadingSearchResults: false,
             isError: false,
             codeDocuments: [],
-            query: ''
+            code: '',
+            language: null,
         }
     },
     methods: {
@@ -62,12 +70,12 @@ export default {
             this.fetchSearchResults()
         },
         fetchSearchResults () {
-            if (!this.query) {
+            if (!this.code || !this.language) {
                 return
             }
 
             this.isLoadingSearchResults = true
-            fetchEndpoint(`/api/repositories/${this.repository.organization}/${this.repository.name}/search?query=${this.query}`)
+            fetchEndpoint(`/api/repositories/${this.repository.organization}/${this.repository.name}/searchByCode?code=${this.code}&language=${this.language}`)
                 .then(response => {
                     this.codeDocuments = response.codeDocuments
                     this.isLoadingSearchResults = false
@@ -76,6 +84,13 @@ export default {
                     this.isError = true
                     console.error(error)
                 })
+        }
+    },
+    watch: {
+        contextMenuSearchByCode () {
+            this.code = this.contextMenuSearchByCode.code
+            this.language = this.contextMenuSearchByCode.language
+            this.fetchSearchResults()
         }
     }
 }
@@ -88,7 +103,7 @@ export default {
   100% { opacity: 1; }
 }
 
-.repository-search {
+.repository-search-by-code {
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -104,30 +119,42 @@ export default {
         overflow: auto;
     }
 
-    &__search-bar {
+    &__code {
         display: flex;
-        width: 100%;
+        flex-direction: column;
         margin-bottom: 30px;
 
-        &__input {
-            margin-right: 8px;
+        &__textarea {
+            font-family: monospace;
+            width: 100%;
+            height: 100px;
+            max-height: 500px;
             border: 3px solid #5F65EE;
             border-radius: 8px;
-            width: 100%;
-            font-size: 16px;
             padding: 8px;
-            line-height: 25px;
+            resize: vertical;
         }
 
-        &__button {
-            background-color: #5F65EE;
-            border-radius: 8px;
-            color: white;
-            padding: 8px 16px;
-            font-size: 16px;
+        &__bottom {
             display: flex;
-            align-items: center;
-            cursor: pointer;
+            justify-content: space-between;
+            margin-top: 8px;
+
+            &__languages {
+                display: flex;
+                align-items: center;
+            }
+
+            &__button {
+                background-color: #5F65EE;
+                border-radius: 8px;
+                color: white;
+                padding: 8px 16px;
+                font-size: 16px;
+                display: flex;
+                align-items: center;
+                cursor: pointer;
+            }
         }
     }
 }

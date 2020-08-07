@@ -6,8 +6,6 @@ from code_search.function_parser.parsers.comment_utils import get_docstring_summ
 
 
 class RubyParser(LanguageParser):
-    FILTER_PATHS = ('test', 'vendor')
-
     BLACKLISTED_FUNCTION_NAMES = {}
 
     @staticmethod

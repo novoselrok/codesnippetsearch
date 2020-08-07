@@ -5,8 +5,6 @@ from code_search.function_parser.parsers.comment_utils import get_docstring_summ
 
 
 class GoParser(LanguageParser):
-    FILTER_PATHS = ('test', 'vendor')
-
     @staticmethod
     def get_definitions(tree, blob: str) -> List[Dict[str, Any]]:
         definitions = []

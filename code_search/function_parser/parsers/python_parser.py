@@ -1,13 +1,10 @@
 from typing import Dict, Iterable, Optional, Iterator, Any, List
 
-from code_search.function_parser.parsers.language_parser import LanguageParser, match_from_span, tokenize_code, \
-    traverse_type
+from code_search.function_parser.parsers.language_parser import LanguageParser, match_from_span, tokenize_code
 from code_search.function_parser.parsers.comment_utils import get_docstring_summary
 
 
 class PythonParser(LanguageParser):
-    FILTER_PATHS = ('test',)
-
     @staticmethod
     def __get_docstring_node(function_node):
         block_nodes = [node for node in function_node.children if node.type == 'block']

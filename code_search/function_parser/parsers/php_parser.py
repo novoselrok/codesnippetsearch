@@ -5,9 +5,6 @@ from code_search.function_parser.parsers.comment_utils import strip_c_style_comm
 
 
 class PhpParser(LanguageParser):
-
-    FILTER_PATHS = ('test', 'tests')
-
     BLACKLISTED_FUNCTION_NAMES = {'__construct', '__destruct', '__call', '__callStatic',
                                   '__get', '__set', '__isset', '__unset',
                                   '__sleep', '__wakeup', '__toString', '__invoke',

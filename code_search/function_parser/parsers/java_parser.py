@@ -5,9 +5,6 @@ from code_search.function_parser.parsers.comment_utils import strip_c_style_comm
 
 
 class JavaParser(LanguageParser):
-
-    FILTER_PATHS = ('test', 'tests')
-
     BLACKLISTED_FUNCTION_NAMES = {'toString', 'hashCode', 'equals', 'finalize', 'notify', 'notifyAll', 'clone'}
 
     @staticmethod

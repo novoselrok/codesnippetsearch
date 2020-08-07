@@ -24,6 +24,7 @@
                 </div>
                 <div class="app__main__content">
                     <RepositorySearch v-show="searchBy === 'query'" :repository="repository"></RepositorySearch>
+                    <RepositorySearchByCode v-show="searchBy === 'code'" :repository="repository" :context-menu-search-by-code="contextMenuSearchByCode"></RepositorySearchByCode>
                 </div>
             </div>
         </div>
@@ -32,19 +33,27 @@
 
 <script>
 import RepositorySearch from './components/RepositorySearch'
+import RepositorySearchByCode from './components/RepositorySearchByCode'
 
 export default {
     components: {
-        RepositorySearch
+        RepositorySearch,
+        RepositorySearchByCode
     },
     props: {
-        repository: { type: Object, required: true }
+        repository: { type: Object, required: true },
+        contextMenuSearchByCode: { type: Object, required: false },
     },
     data () {
         return {
             searchBy: 'query',
         }
     },
+    watch: {
+        contextMenuSearchByCode () {
+            this.searchBy = 'code'
+        }
+    }
 }
 </script>
 
