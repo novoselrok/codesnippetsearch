@@ -123,10 +123,11 @@ def train_model(model: CodeSearchNN,
                 learning_rate=1e-3,
                 batch_size=1000,
                 max_epochs=100,
+                patience=5,
                 mrr_eval_batch_size=1000,
                 verbose=True):
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    es = EarlyStopping(model, data_manager, verbose=verbose)
+    es = EarlyStopping(model, data_manager, patience=patience, verbose=verbose)
 
     train_language_code_seqs, train_language_query_seqs = train_language_seqs
     valid_language_code_seqs, valid_language_query_seqs = valid_language_seqs

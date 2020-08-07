@@ -28,7 +28,7 @@ LANGUAGE_METADATA = {
         'platform': 'npm',
         'ext': 'js',
         'language_parser': JavascriptParser,
-        'ignore_paths': ['vendor', 'test', 'node_modules', '.min']
+        'ignore_paths': ['vendor', 'test', 'node_modules', '.min', 'dist']
     },
     'php': {
         'platform': 'packagist',
