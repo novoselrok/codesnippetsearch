@@ -1,3 +1,4 @@
+import enum
 import json
 import os
 from typing import Generator, Iterable
@@ -6,19 +7,22 @@ TokensGenerator = Generator[Iterable[str], None, None]
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_FILE = os.path.join(ROOT_DIR, 'env.json')
-MODELS_CACHE_DIR = os.path.join(ROOT_DIR, 'cache', 'models')
-SEQS_CACHE_DIR = os.path.join(ROOT_DIR, 'cache', 'seqs')
-VOCABULARIES_CACHE_DIR = os.path.join(ROOT_DIR, 'cache', 'vocabularies')
-DOCS_CACHE_DIR = os.path.join(ROOT_DIR, 'cache', 'docs')
-CODE_EMBEDDINGS_CACHE_DIR = os.path.join(ROOT_DIR, 'cache', 'code_embeddings')
-ANNS_CACHE_DIR = os.path.join(ROOT_DIR, 'cache', 'anns')
+SERIALIZED_DATA_DIR = os.path.join(ROOT_DIR, 'serialized_data')
+VENDOR_DIR = os.path.join(ROOT_DIR, 'vendor')
+BUILD_DIR = os.path.join(ROOT_DIR, 'build')
+CODESEARCHNET_DATA_DIR = os.path.join(ROOT_DIR, 'codesearchnet_data')
+BASE_LANGUAGES_DIR = os.path.join(SERIALIZED_DATA_DIR, 'languages')
+REPOSITORIES_DIR = os.path.join(SERIALIZED_DATA_DIR, 'repositories')
 
-SEQS_CACHE_FILENAME = '{language}_{set_}_{type_}.npy'
-MODEL_CACHE_FILENAME = '{language}.hdf5'
-VOCABULARY_CACHE_FILENAME = '{language}_{type_}.pkl'
-DOCS_CACHE_FILENAME = '{language}_{set_}.jsonl'
-CODE_EMBEDDINGS_CACHE_FILENAME = '{language}.npy'
-ANN_CACHE_FILENAME = '{language}.ann'
+# TODO: Move filenames to a dict
+SERIALIZED_SEQS_FILENAME = 'seqs_{set_}_{type_}'
+SERIALIZED_MODEL_FILENAME = 'model'
+SERIALIZED_EMBEDDING_WEIGHTS = 'embedding_weights_{type_}'
+SERIALIZED_VOCABULARY_FILENAME = 'vocabulary_{type_}'
+SERIALIZED_CORPUS_FILENAME = 'corpus_{set_}'
+SERIALIZED_PREPROCESSED_CORPUS_FILENAME = 'preprocessed_corpus_{set_}'
+SERIALIZED_CODE_EMBEDDINGS_FILENAME = 'code_embeddings'
+SERIALIZED_ANNOY_INDEX_FILENAME = 'annoy_index'
 
 LANGUAGES_NUM_FILES = {
     'python': 14,
@@ -29,12 +33,44 @@ LANGUAGES_NUM_FILES = {
     'java': 16,
 }
 LANGUAGES = list(sorted(LANGUAGES_NUM_FILES.keys()))
-DATA_SETS = ['train', 'valid', 'test']
+
+
+class DataType(enum.Enum):
+    CODE = 'code'
+    QUERY = 'query'
+
+    def __str__(self):
+        return self.value
+
+
+class DataSet(enum.Enum):
+    TRAIN = 'train'
+    VALID = 'valid'
+    TEST = 'test'
+    ALL = 'all'
+
+    @staticmethod
+    def sets():
+        return list(DataSet)
+
+    @staticmethod
+    def split_data_sets():
+        return [DataSet.TRAIN, DataSet.VALID, DataSet.TEST]
+
+    def __str__(self):
+        return self.value
+
+
+DATA_SETS_SPLIT_RATIO = {
+    DataSet.TRAIN: 0.8,
+    DataSet.VALID: 0.1,
+    DataSet.TEST: 0.1,
+}
 
 # Model constants
-TRAIN_BATCH_SIZE = 1000
-EMBEDDING_SIZE = 256
-LEARNING_RATE = 0.01
+TRAIN_BATCH_SIZE = 512
+EMBEDDING_SIZE = 128
+LEARNING_RATE = 0.1
 
 FUNC_NAME_AS_QUERY_PCT = 0.1
 MIN_FUNC_NAME_QUERY_LENGTH = 12
@@ -44,7 +80,7 @@ CODE_VOCABULARY_SIZE = 10000
 CODE_TOKEN_COUNT_THRESHOLD = 10
 CODE_MAX_SEQ_LENGTH = 200
 
-QUERY_VOCABULARY_SIZE = 10000
+QUERY_VOCABULARY_SIZE = CODE_VOCABULARY_SIZE
 QUERY_TOKEN_COUNT_THRESHOLD = 10
 QUERY_MAX_SEQ_LENGTH = 30
 

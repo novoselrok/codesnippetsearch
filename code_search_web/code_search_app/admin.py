@@ -9,6 +9,10 @@ class CodeDocumentAdmin(admin.ModelAdmin):
     pass
 
 
+class CodeRepositoryAdmin(admin.ModelAdmin):
+    pass
+
+
 class QueryLogAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
@@ -23,21 +27,6 @@ class QueryLogAdmin(admin.ModelAdmin):
         return super().changelist_view(request, extra_context=extra_context)
 
 
-class CodeDocumentVisitLogAdmin(admin.ModelAdmin):
-    raw_id_fields = ('code_document',)
-
-    def changelist_view(self, request, extra_context=None):
-        # Aggregate code document visits
-        visits_per_day = models.CodeDocumentVisitLog.objects.annotate(date=TruncDay('created_at')) \
-            .values('date') \
-            .annotate(n_visits=Count('id')) \
-            .order_by('-date') \
-
-        extra_context = extra_context or {'visits_per_day': list(visits_per_day)[:5]}
-        # Call the superclass changelist_view to render the page
-        return super().changelist_view(request, extra_context=extra_context)
-
-
 admin.site.register(models.CodeDocument, CodeDocumentAdmin)
 admin.site.register(models.QueryLog, QueryLogAdmin)
-admin.site.register(models.CodeDocumentVisitLog, CodeDocumentVisitLogAdmin)
+admin.site.register(models.CodeRepository, CodeRepositoryAdmin)

@@ -25,12 +25,15 @@ INSTALLED_APPS = [
 
     'django.contrib.humanize',
 
+    'corsheaders',
+
     'code_search_app.apps.CodeSearchAppConfig',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -43,7 +46,9 @@ ROOT_URLCONF = 'code_search_web.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [
+            os.path.join(BASE_DIR, 'client')
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -97,6 +102,9 @@ USE_TZ = True
 STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.ManifestStaticFilesStorage'
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'client', 'dist', 'static'),
+]
 
 CACHES = {
     'default': {
@@ -110,3 +118,13 @@ if not DEBUG and len(ENV['SENTRY_DSN']) > 0:
         dsn=ENV['SENTRY_DSN'],
         integrations=[DjangoIntegration()]
     )
+
+CORS_ORIGIN_REGEX_WHITELIST = [
+    r'^https://\w+\.github\.com$',
+    r'^https://\w+\.codesnippetsearch\.net$',
+] + ENV['CORS_ORIGIN_REGEX_WHITELIST']
+CORS_ALLOW_METHODS = (
+    'GET',
+    'OPTIONS',
+    'POST'
+)
