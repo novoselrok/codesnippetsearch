@@ -39,25 +39,27 @@ class CodeSearchNN(nn.Module):
         return self.query_weights_layer.weight
 
     def set_query_weights_layer(self, weight: torch.Tensor):
-        self.query_weights_layer.weight = nn.Parameter(weight)
+        with torch.no_grad():
+            self.query_weights_layer.weight = nn.Parameter(weight)
 
     def get_language_weights_layer(self, language: str):
         return getattr(self, f'{language}_weights_layer').weight
 
     def set_language_weights_layer(self, language: str, weight: torch.Tensor):
-        getattr(self, f'{language}_weights_layer').weight = nn.Parameter(weight)
+        with torch.no_grad():
+            getattr(self, f'{language}_weights_layer').weight = nn.Parameter(weight)
 
     def get_query_embedding_weights(self):
         return self.query_embedding.weight
 
     def set_query_embedding_weights(self, embedding_weights: torch.Tensor):
-        self.query_embedding.weight = nn.Parameter(embedding_weights)
+        self.query_embedding = nn.Embedding.from_pretrained(embedding_weights)
 
     def get_language_embedding_weights(self, language: str):
         return getattr(self, f'{language}_embedding').weight
 
     def set_language_embedding_weights(self, language: str, embedding_weights: torch.Tensor):
-        getattr(self, f'{language}_embedding').weight = nn.Parameter(embedding_weights)
+        setattr(self, f'{language}_embedding', nn.Embedding.from_pretrained(embedding_weights))
 
     @staticmethod
     def mask(seqs: torch.Tensor):

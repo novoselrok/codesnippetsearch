@@ -6,6 +6,8 @@ from typing import Iterable
 import numpy as np
 import torch
 
+from code_search import torch_utils
+
 
 def pickle_load(path: str):
     with open(path, 'rb') as f:
@@ -46,7 +48,7 @@ def numpy_serialize(arr: np.ndarray, path: str):
 
 
 def torch_load(path: str):
-    return torch.load(path)
+    return torch.load(path, map_location=torch_utils.get_device())
 
 
 def torch_serialize(state_dict, path: str):

@@ -93,7 +93,7 @@ def generate_batch(
 
 
 def cosine_loss(cosine_similarity_matrix, device: torch.device):
-    neg_matrix = torch.zeros(*list(cosine_similarity_matrix.shape), requires_grad=True).to(device)
+    neg_matrix = torch.zeros(*list(cosine_similarity_matrix.shape)).to(device)
     neg_matrix.fill_diagonal_(float('-inf'))
 
     # Distance between query and code snippet should be as small as possible

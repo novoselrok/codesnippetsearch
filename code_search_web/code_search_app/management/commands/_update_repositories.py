@@ -69,7 +69,7 @@ def build_repository_model(
         base_data_manager: DataManager,
         languages: List[str]):
     base_model = get_base_language_model_for_evaluation(base_data_manager)
-    repository_model = get_repository_model(repository_data_manager, languages)
+    repository_model = get_repository_model_for_evaluation(repository_data_manager, languages)
 
     repository_model.set_query_embedding_weights(
         torch_utils.np_to_torch(repository_data_manager.get_query_embedding_weights()))
