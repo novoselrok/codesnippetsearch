@@ -19,9 +19,11 @@ const extensionToLanguage = {
 
 const getLastElement = arr => arr.slice(-1)[0]
 
-window.API_URL = process.env.VUE_APP_DEV_API_URL || 'https://codesnippetsearch.net'
-
 const initApp = (repository) => {
+    if (!repository) {
+        return
+    }
+
     const sidebarEl = document.createElement('div')
     sidebarEl.classList.add('codesnippetsearch-sidebar')
     sidebarEl.innerHTML = '<div id="app"></div>'

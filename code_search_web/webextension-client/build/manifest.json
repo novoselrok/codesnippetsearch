@@ -10,17 +10,24 @@
   "content_scripts": [
     {
       "matches": ["*://*.github.com/*"],
-      "js": ["dist/app.umd.min.js"],
-      "css": ["sidebar.css", "highlight.css"]
+      "js": [
+        "browser-polyfill.min.js",
+        "dist/app.umd.min.js"
+      ],
+      "css": [
+        "sidebar.css",
+        "highlight.css"
+      ]
     }
   ],
   "permissions": [
     "webRequest",
     "contextMenus",
-    "http://0.0.0.0/*"
+    "https://codesnippetsearch.net/*"
   ],
   "background": {
     "scripts": [
+      "browser-polyfill.min.js",
       "background.js"
     ]
   },
@@ -28,7 +35,8 @@
     "toggle-sidebar": {
       "suggested_key": {
         "default": "Alt+Shift+S"
-      }
+      },
+      "description": "Open CodeSnippetSearch sidebar"
     }
   },
   "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self';"

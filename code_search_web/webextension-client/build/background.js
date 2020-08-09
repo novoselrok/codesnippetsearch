@@ -1,3 +1,19 @@
+var API_URL = 'https://codesnippetsearch.net'
+
+function fetchEndpoint(endpoint) {
+    return fetch(`${API_URL}${endpoint}`).then(response => response.json()).catch(err => console.error(err))
+}
+
+function postEndpoint(endpoint, data) {
+    return fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    }).then(response => response.json()).catch(err => console.error(err))
+}
+
 browser.contextMenus.create({
   id: 'code-selection',
   title: 'Search by code',
@@ -16,5 +32,13 @@ browser.commands.onCommand.addListener(command => {
             const tab = tabs[0]
             browser.tabs.sendMessage(tab.id, { type: 'open-sidebar' })
         })
+    }
+})
+
+browser.runtime.onMessage.addListener(function (message) {
+    if (message.type === 'fetch-endpoint') {
+        return fetchEndpoint(message.endpoint)
+    } else if (message.type === 'post-endpoint') {
+        return postEndpoint(message.endpoint, message.data)
     }
 })
