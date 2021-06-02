@@ -119,7 +119,7 @@ tornado==6.0.4
 tqdm==4.45.0
 traitlets==4.3.3
 tree-sitter==0.1.1
-urllib3==1.25.8
+urllib3==1.26.5
 wandb==0.9.3
 wasabi==0.6.0
 watchdog==0.10.2
